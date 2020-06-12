@@ -355,6 +355,11 @@ enum (+= 100)
 // For extra items menu handlers
 #define EXTRAS_CUSTOM_STARTID (EXTRA_WEAPONS_STARTID + ArraySize(g_extraweapon_names))
 
+// bit operation
+#define set_bit(%1,%2)		(%1 |= (1 << (%2 % 32)))
+#define unset_bit(%1,%2)		(%1 &= ~(1 << (%2 % 32)))
+#define get_bit(%1,%2)		(%1 & (1 << (%2 % 32))) 
+
 // Menu selections
 const MENU_KEY_AUTOSELECT = 7
 const MENU_KEY_BACK = 7
@@ -627,9 +632,11 @@ const ZP_PLUGIN_HANDLED = 97
 =================================================================================*/
 
 // Player vars
-new g_zombie[33] // is zombie
-new g_nemesis[33] // is nemesis
-new g_survivor[33] // is survivor
+new g_zombie // is zombie
+new g_nemesis // is nemesis
+new g_survivor // is survivor
+new g_sniper // is sniper
+new g_assassin // is assassin
 new g_firstzombie[33] // is first zombie
 new g_lastzombie[33] // is last zombie
 new g_lasthuman[33] // is last human
@@ -652,8 +659,7 @@ new g_menu_data[33][5] // data for some menu handlers
 new g_ent_playermodel[33] // player model entity
 new g_ent_weaponmodel[33] // weapon model entity
 new g_burning_duration[33] // burning task duration
-new g_sniper[33] // is sniper
-new g_assassin[33] // is assassin
+
 
 // Game vars
 new g_pluginenabled // ZPA enabled
@@ -2166,7 +2172,7 @@ public event_intermission()
 public event_ammo_x(id)
 {
 	// Humans only
-	if (g_zombie[id])
+	if (get_user_zombie(id))
 		return;
 	
 	// Get ammo type
@@ -2190,7 +2196,7 @@ public event_ammo_x(id)
 	amount = read_data(2)
 	
 	// Unlimited BP Ammo?
-	if (g_survivor[id] ? get_pcvar_num(cvar_survinfammo) : get_pcvar_num(cvar_infammo) || g_sniper[id] ? get_pcvar_num(cvar_sniperinfammo) : get_pcvar_num(cvar_infammo))
+	if (get_user_survivor(id) ? get_pcvar_num(cvar_survinfammo) : get_pcvar_num(cvar_infammo) || get_user_sniper(id) ? get_pcvar_num(cvar_sniperinfammo) : get_pcvar_num(cvar_infammo))
 	{
 		if (amount < MAXBPAMMO[weapon])
 		{
@@ -2319,7 +2325,7 @@ public fw_PlayerSpawn_Post(id)
 		}
 		
 		// Execute our player spawn post forward
-		if (g_zombie[id] || g_survivor[id])
+		if (get_user_zombie(id) || get_user_survivor(id))
 		{
 			ExecuteForward(g_fwPlayerSpawnPost, g_fwDummyResult, id);
 			return;
@@ -2507,7 +2513,7 @@ public fw_PlayerKilled(victim, attacker, shouldgib)
 	}
 	
 	// Stop bleeding/burning/aura when killed
-	if (g_zombie[victim] || g_survivor[victim] || g_sniper[victim])
+	if (get_user_zombie(victim) || get_user_survivor(victim) || get_user_sniper(victim))
 	{
 		remove_task(victim+TASK_BLOOD)
 		remove_task(victim+TASK_AURA)
@@ -2515,7 +2521,7 @@ public fw_PlayerKilled(victim, attacker, shouldgib)
 	}
 	
 	// Nemesis and Assassin explode! or when killed by a Assassin victim is cut in pieces
-	if (g_nemesis[victim] || g_assassin[victim] || (g_assassin[attacker] && get_pcvar_num(cvar_nemfraggore)))
+	if (get_user_nemesis(victim) || get_user_assassin(victim) || (get_user_assassin(attacker) && get_pcvar_num(cvar_nemfraggore)))
 		SetHamParamInteger(3, 2)
 	
 	// Get deathmatch mode status and whether the player killed himself
@@ -2526,24 +2532,24 @@ public fw_PlayerKilled(victim, attacker, shouldgib)
 	if (!selfkill)
 	{
 		// Ignore Nemesis/Survivor/Sniper Frags?
-		if ((g_nemesis[attacker] && get_pcvar_num(cvar_nemignorefrags)) || (g_survivor[attacker] && get_pcvar_num(cvar_survignorefrags)) 
-		|| (g_sniper[attacker] && get_pcvar_num(cvar_sniperignorefrags))|| (g_assassin[attacker] && get_pcvar_num(cvar_assassinignorefrags)))
+		if ((get_user_nemesis(attacker) && get_pcvar_num(cvar_nemignorefrags)) || (get_user_survivor(attacker) && get_pcvar_num(cvar_survignorefrags)) 
+		|| (get_user_sniper(attacker) && get_pcvar_num(cvar_sniperignorefrags))|| (get_user_assassin(attacker) && get_pcvar_num(cvar_assassinignorefrags)))
 			RemoveFrags(attacker, victim)
 		
 		// Zombie/nemesis/assassin killed human, reward ammo packs
-		if (g_zombie[attacker] && (!g_nemesis[attacker] || !get_pcvar_num(cvar_nemignoreammo)) && (!g_assassin[attacker] || !get_pcvar_num(cvar_assassinignoreammo)))
+		if (get_user_zombie(attacker) && (!get_user_nemesis(attacker) || !get_pcvar_num(cvar_nemignoreammo)) && (!get_user_assassin(attacker) || !get_pcvar_num(cvar_assassinignoreammo)))
 			g_ammopacks[attacker] += get_pcvar_num(cvar_ammoinfect)
 		
 		// Human killed zombie, add up the extra frags for kill
-		if (!g_zombie[attacker] && get_pcvar_num(cvar_fragskill) > 1)
+		if (!get_user_zombie(attacker) && get_pcvar_num(cvar_fragskill) > 1)
 			UpdateFrags(attacker, victim, get_pcvar_num(cvar_fragskill) - 1, 0, 0)
 		
 		// Zombie killed human, add up the extra frags for kill
-		if (g_zombie[attacker] && get_pcvar_num(cvar_fragsinfect) > 1)
+		if (get_user_zombie(attacker) && get_pcvar_num(cvar_fragsinfect) > 1)
 			UpdateFrags(attacker, victim, get_pcvar_num(cvar_fragsinfect) - 1, 0, 0)
 			
 		// When killed by a Sniper victim explodes
-		if (g_sniper[attacker] && (g_currentweapon[attacker] == CSW_AWP) && get_pcvar_num(cvar_sniperfraggore) && g_zombie[victim])
+		if (get_user_sniper(attacker) && (g_currentweapon[attacker] == CSW_AWP) && get_pcvar_num(cvar_sniperfraggore) && get_user_zombie(victim))
 		{	
 			// Cut him into pieces
 			SetHamParamInteger(3, 2)
@@ -2574,9 +2580,9 @@ public fw_PlayerKilled(victim, attacker, shouldgib)
 			return;
 		
 		// Respawn if human/zombie/nemesis/assassin/survivor/sniper?
-		if ((g_zombie[victim] && !g_nemesis[victim] && !g_assassin[victim] && !get_pcvar_num(cvar_respawnzomb)) || (!g_zombie[victim] && !g_survivor[victim] && !g_sniper[victim] && !get_pcvar_num(cvar_respawnhum)) 
-		|| (g_nemesis[victim] && !get_pcvar_num(cvar_respawnnem)) || (g_survivor[victim] && !get_pcvar_num(cvar_respawnsurv)) 
-		|| (g_sniper[victim] && !get_pcvar_num(cvar_respawnsniper)) || (g_assassin[victim] && !get_pcvar_num(cvar_respawnassassin)))
+		if ((get_user_zombie(victim) && !get_user_nemesis(victim) && !get_user_assassin(victim) && !get_pcvar_num(cvar_respawnzomb)) || (!get_user_zombie(victim) && !get_user_survivor(victim) && !get_user_sniper(victim) && !get_pcvar_num(cvar_respawnhum)) 
+		|| (get_user_nemesis(victim) && !get_pcvar_num(cvar_respawnnem)) || (get_user_survivor(victim) && !get_pcvar_num(cvar_respawnsurv)) 
+		|| (get_user_sniper(victim) && !get_pcvar_num(cvar_respawnsniper)) || (get_user_assassin(victim) && !get_pcvar_num(cvar_respawnassassin)))
 			return;
 		
 		// Respawn as zombie?
@@ -2619,21 +2625,21 @@ public fw_TakeDamage(victim, inflictor, attacker, Float:damage, damage_type)
 		return HAM_SUPERCEDE;
 	
 	// Prevent friendly fire
-	if (g_zombie[attacker] == g_zombie[victim])
+	if (get_user_zombie(attacker) == get_user_zombie(victim))
 		return HAM_SUPERCEDE;
 	
 	// Attacker is human...
-	if (!g_zombie[attacker])
+	if (!get_user_zombie(attacker))
 	{
 		// Armor multiplier for the final damage on normal zombies
-		if (!g_nemesis[victim] && !g_assassin[victim] && !g_sniper[attacker])
+		if (!get_user_nemesis(victim) && !get_user_assassin(victim) && !get_user_sniper(attacker))
 		{
 			damage *= get_pcvar_float(cvar_zombiearmor)
 			SetHamParamFloat(4, damage)
 		}
 		
 		// Reward ammo packs
-		if ((g_survivor[attacker] && !get_pcvar_num(cvar_survignoreammo)) || (g_sniper[attacker] && !get_pcvar_num(cvar_sniperignoreammo)) || (!g_survivor[attacker] && !g_sniper[attacker]))
+		if ((get_user_survivor(attacker) && !get_pcvar_num(cvar_survignoreammo)) || (get_user_sniper(attacker) && !get_pcvar_num(cvar_sniperignoreammo)) || (!get_user_survivor(attacker) && !get_user_sniper(attacker)))
 		{
 			// Store damage dealt
 			g_damagedealt[attacker] += floatround(damage)
@@ -2647,7 +2653,7 @@ public fw_TakeDamage(victim, inflictor, attacker, Float:damage, damage_type)
 		}
 		
 		// Replace damage done by Sniper's weapon with the one set by the cvar
-		if (g_sniper[attacker] && g_currentweapon[attacker] == CSW_AWP)
+		if (get_user_sniper(attacker) && g_currentweapon[attacker] == CSW_AWP)
 			SetHamParamFloat(4, get_pcvar_float(cvar_sniperdamage))
 		
 		return HAM_IGNORED;
@@ -2660,14 +2666,14 @@ public fw_TakeDamage(victim, inflictor, attacker, Float:damage, damage_type)
 		return HAM_SUPERCEDE;
 	
 	// Nemesis/Assassin?
-	if (g_nemesis[attacker] || g_assassin[attacker])
+	if (get_user_nemesis(attacker) || get_user_assassin(attacker))
 	{
 		// Ignore nemesis/assassin damage override if damage comes from a 3rd party entity
 		// (to prevent this from affecting a sub-plugin's rockets e.g.)
 		if (inflictor == attacker)
 		{
 			// Set proper damage
-			SetHamParamFloat(4, g_nemesis[attacker] ? get_pcvar_float(cvar_nemdamage) : get_pcvar_float(cvar_assassindamage))
+			SetHamParamFloat(4, get_user_nemesis(attacker) ? get_pcvar_float(cvar_nemdamage) : get_pcvar_float(cvar_assassindamage))
 		}
 		
 		return HAM_IGNORED;
@@ -2704,16 +2710,16 @@ public fw_TakeDamage_Post(victim)
 	// --- Check if victim should be Pain Shock Free ---
 	
 	// Check if proper CVARs are enabled
-	if (g_zombie[victim])
+	if (get_user_zombie(victim))
 	{
 		// Nemesis
-		if (g_nemesis[victim])
+		if (get_user_nemesis(victim))
 		{
 			if (!get_pcvar_num(cvar_nempainfree)) return;
 		}
 		
 		// Assassin
-		else if (g_assassin[victim])
+		else if (get_user_assassin(victim))
 		{
 			if (!get_pcvar_num(cvar_assassinpainfree)) return;
 		}
@@ -2731,13 +2737,13 @@ public fw_TakeDamage_Post(victim)
 	else
 	{
 		// Survivor
-		if (g_survivor[victim])
+		if (get_user_survivor(victim))
 		{
 			if (!get_pcvar_num(cvar_survpainfree)) return;
 		}
 		
 		// Sniper
-		if (g_sniper[victim])
+		if (get_user_sniper(victim))
 		{
 			if (!get_pcvar_num(cvar_sniperpainfree)) return;
 		}
@@ -2766,15 +2772,15 @@ public fw_TraceAttack(victim, attacker, Float:damage, Float:direction[3], traceh
 		return HAM_SUPERCEDE;
 	
 	// Prevent friendly fire
-	if (g_zombie[attacker] == g_zombie[victim])
+	if (get_user_zombie(attacker) == get_user_zombie(victim))
 		return HAM_SUPERCEDE;
 	
 	// Victim isn't a zombie or not bullet damage, nothing else to do here
-	if (!g_zombie[victim] || !(damage_type & DMG_BULLET))
+	if (!get_user_zombie(victim) || !(damage_type & DMG_BULLET))
 		return HAM_IGNORED;
 	
 	// If zombie hitzones are enabled, check whether we hit an allowed one
-	if (get_pcvar_num(cvar_hitzones) && !g_nemesis[victim] && !g_assassin[victim] && !(get_pcvar_num(cvar_hitzones) & (1<<get_tr2(tracehandle, TR_iHitgroup))))
+	if (get_pcvar_num(cvar_hitzones) && !get_user_nemesis(victim) && !get_user_assassin(victim) && !(get_pcvar_num(cvar_hitzones) & (1<<get_tr2(tracehandle, TR_iHitgroup))))
 		return HAM_SUPERCEDE;
 	
 	// Knockback disabled, nothing else to do here
@@ -2782,11 +2788,11 @@ public fw_TraceAttack(victim, attacker, Float:damage, Float:direction[3], traceh
 		return HAM_IGNORED;
 	
 	// Nemesis knockback disabled, nothing else to do here
-	if (g_nemesis[victim] && get_pcvar_float(cvar_nemknockback) == 0.0)
+	if (get_user_nemesis(victim) && get_pcvar_float(cvar_nemknockback) == 0.0)
 		return HAM_IGNORED;
 	
 	// Assassin knockback disabled, nothing else to do here
-	if (g_assassin[victim] && get_pcvar_float(cvar_assassinknockback) == 0.0)
+	if (get_user_assassin(victim) && get_pcvar_float(cvar_assassinknockback) == 0.0)
 		return HAM_IGNORED;
 	
 	// Get whether the victim is in a crouch state
@@ -2823,11 +2829,11 @@ public fw_TraceAttack(victim, attacker, Float:damage, Float:direction[3], traceh
 		xs_vec_mul_scalar(direction, get_pcvar_float(cvar_knockbackducking), direction)
 	
 	// Apply zombie class/nemesis knockback multiplier
-	if (g_nemesis[victim])
+	if (get_user_nemesis(victim))
 		xs_vec_mul_scalar(direction, get_pcvar_float(cvar_nemknockback), direction)
-	else if (g_assassin[victim])
+	else if (get_user_assassin(victim))
 		xs_vec_mul_scalar(direction, get_pcvar_float(cvar_assassinknockback), direction)
-	else if (!g_assassin[victim] && !g_nemesis[victim])
+	else if (!get_user_assassin(victim) && !get_user_nemesis(victim))
 		xs_vec_mul_scalar(direction, g_zombie_knockback[victim], direction)
 	
 	// Add up the new vector
@@ -2847,7 +2853,7 @@ public fw_TraceAttack(victim, attacker, Float:damage, Float:direction[3], traceh
 public fw_UseStationary(entity, caller, activator, use_type)
 {
 	// Prevent zombies from using stationary guns
-	if (use_type == USE_USING && is_user_valid_connected(caller) && g_zombie[caller])
+	if (use_type == USE_USING && is_user_valid_connected(caller) && get_user_zombie(caller))
 		return HAM_SUPERCEDE;
 	
 	return HAM_IGNORED;
@@ -2879,7 +2885,7 @@ public fw_TouchWeapon(weapon, id)
 		return HAM_IGNORED;
 	
 	// Dont pickup weapons if zombie, survivor or sniper (+PODBot MM fix)
-	if (g_zombie[id] || (g_survivor[id] && !g_isbot[id]) || (g_sniper[id] && !g_isbot[id]))
+	if (get_user_zombie(id) || (get_user_survivor(id) && !g_isbot[id]) || (get_user_sniper(id) && !g_isbot[id]))
 		return HAM_SUPERCEDE;
 	
 	return HAM_IGNORED;
@@ -2923,7 +2929,7 @@ public fw_Item_Deploy_Post(weapon_ent)
 	replace_weapon_models(owner, weaponid)
 	
 	// Zombie not holding an allowed weapon for some reason
-	if (g_zombie[owner] && !((1<<weaponid) & ZOMBIE_ALLOWED_WEAPONS_BITSUM))
+	if (get_user_zombie(owner) && !((1<<weaponid) & ZOMBIE_ALLOWED_WEAPONS_BITSUM))
 	{
 		// Switch to knife
 		g_currentweapon[owner] = CSW_KNIFE
@@ -3039,7 +3045,7 @@ public fw_EmitSound(id, channel, const sample[], Float:volume, Float:attn, flags
 		return FMRES_SUPERCEDE;
 	
 	// Replace these next sounds for zombies only
-	if (!is_user_valid_connected(id) || !g_zombie[id])
+	if (!is_user_valid_connected(id) || !get_user_zombie(id))
 		return FMRES_IGNORED;
 	
 	static sound[64]
@@ -3047,12 +3053,12 @@ public fw_EmitSound(id, channel, const sample[], Float:volume, Float:attn, flags
 	// Zombie being hit
 	if (sample[7] == 'b' && sample[8] == 'h' && sample[9] == 'i' && sample[10] == 't')
 	{
-		if (g_nemesis[id])
+		if (get_user_nemesis(id))
 		{
 			ArrayGetString(nemesis_pain, random_num(0, ArraySize(nemesis_pain) - 1), sound, charsmax(sound))
 			emit_sound(id, channel, sound, volume, attn, flags, pitch)
 		}
-		else if (g_assassin[id])
+		else if (get_user_assassin(id))
 		{
 			ArrayGetString(assassin_pain, random_num(0, ArraySize(assassin_pain) - 1), sound, charsmax(sound))
 			emit_sound(id, channel, sound, volume, attn, flags, pitch)
@@ -3189,7 +3195,7 @@ public fw_SetModel(entity, const model[])
 		return;
 	
 	// Get whether grenade's owner is a zombie
-	if (g_zombie[pev(entity, pev_owner)])
+	if (get_user_zombie(pev(entity, pev_owner)))
 	{
 		if (model[9] == 'h' && model[10] == 'e' && get_pcvar_num(cvar_extrainfbomb)) // Infection Bomb
 		{
@@ -3447,9 +3453,9 @@ public fw_CmdStart(id, handle)
 		return;
 	
 	// This logic looks kinda weird, but it should work in theory...
-	// p = g_zombie[id], q = g_survivor[id], r = g_cached_customflash
-	// ¬(p v q v (¬p ^ r)) <==> ¬p ^ ¬q ^ (p v ¬r)
-	if (!g_zombie[id] && !g_survivor[id] && !g_sniper[id] && (g_zombie[id] || !g_cached_customflash))
+	// p = get_user_zombie(id), q = get_user_survivor(id), r = g_cached_customflash
+	// ï¿½(p v q v (ï¿½p ^ r)) <==> ï¿½p ^ ï¿½q ^ (p v ï¿½r)
+	if (!get_user_zombie(id) && !get_user_survivor(id) && !get_user_sniper(id) && (get_user_zombie(id) || !g_cached_customflash))
 		return;
 	
 	// Check if it's a flashlight impulse
@@ -3460,7 +3466,7 @@ public fw_CmdStart(id, handle)
 	set_uc(handle, UC_Impulse, 0)
 	
 	// Should human's custom flashlight be turned on?
-	if (!g_zombie[id] && !g_survivor[id] && !g_sniper[id] && g_flashbattery[id] > 2 && get_gametime() - g_lastflashtime[id] > 1.2)
+	if (!get_user_zombie(id) && !get_user_survivor(id) && !get_user_sniper(id) && g_flashbattery[id] > 2 && get_gametime() - g_lastflashtime[id] > 1.2)
 	{
 		// Prevent calling flashlight too quickly (bugfix)
 		g_lastflashtime[id] = get_gametime()
@@ -3497,7 +3503,7 @@ public fw_PlayerPreThink(id)
 		return;
 	
 	// Silent footsteps for zombies/assassins ?
-	if ((g_cached_zombiesilent && g_zombie[id] && !g_nemesis[id] && !g_assassin[id]) || g_assassin[id])
+	if ((g_cached_zombiesilent && get_user_zombie(id) && !get_user_nemesis(id) && !get_user_assassin(id)) || get_user_assassin(id))
 		set_pev(id, pev_flTimeStepSound, STEPTIME_SILENT)
 	
 	// Set Player MaxSpeed
@@ -3513,20 +3519,20 @@ public fw_PlayerPreThink(id)
 	}
 	else
 	{
-		if (g_zombie[id])
+		if (get_user_zombie(id))
 		{
-			if (g_nemesis[id])
+			if (get_user_nemesis(id))
 				set_pev(id, pev_maxspeed, g_cached_nemspd)
-			else if (g_assassin[id])
+			else if (get_user_assassin(id))
 				set_pev(id, pev_maxspeed, g_cached_assassinspd)
 			else
 				set_pev(id, pev_maxspeed, g_zombie_spd[id])
 		}
 		else
 		{
-			if (g_survivor[id])
+			if (get_user_survivor(id))
 				set_pev(id, pev_maxspeed, g_cached_survspd)
-			else if (g_sniper[id])
+			else if (get_user_sniper(id))
 				set_pev(id, pev_maxspeed, g_cached_sniperspd)
 			else
 				set_pev(id, pev_maxspeed, g_cached_humanspd)
@@ -3537,19 +3543,19 @@ public fw_PlayerPreThink(id)
 	
 	// Check if proper CVARs are enabled and retrieve leap settings
 	static Float:cooldown, Float:current_time
-	if (g_zombie[id])
+	if (get_user_zombie(id))
 	{
-		if (g_nemesis[id])
+		if (get_user_nemesis(id))
 		{
 			if (!g_cached_leapnemesis) return;
 			cooldown = g_cached_leapnemesiscooldown
 		}
-		else if (g_assassin[id])
+		else if (get_user_assassin(id))
 		{
 			if (!g_cached_leapassassin) return;
 			cooldown = g_cached_leapassassincooldown
 		}
-		else if (!g_assassin[id] && !g_nemesis[id])
+		else if (!get_user_assassin(id) && !get_user_nemesis(id))
 		{
 			switch (g_cached_leapzombies)
 			{
@@ -3562,12 +3568,12 @@ public fw_PlayerPreThink(id)
 	}
 	else
 	{
-		if (g_survivor[id])
+		if (get_user_survivor(id))
 		{
 			if (!g_cached_leapsurvivor) return;
 			cooldown = g_cached_leapsurvivorcooldown
 		}
-		else if (g_sniper[id])
+		else if (get_user_sniper(id))
 		{
 			if (!g_cached_leapsniper) return;
 			cooldown = g_cached_leapsnipercooldown
@@ -3591,27 +3597,27 @@ public fw_PlayerPreThink(id)
 	
 	static Float:velocity[3]
 
-	if (g_survivor[id])
+	if (get_user_survivor(id))
 		velocity_by_aim(id, get_pcvar_num(cvar_leapsurvivorforce), velocity)
-	else if (g_nemesis[id])
+	else if (get_user_nemesis(id))
 		velocity_by_aim(id, get_pcvar_num(cvar_leapnemesisforce), velocity)
-	else if (g_assassin[id])
+	else if (get_user_assassin(id))
 		velocity_by_aim(id, get_pcvar_num(cvar_leapassassinforce), velocity)
-	else if (g_sniper[id])
+	else if (get_user_sniper(id))
 		velocity_by_aim(id, get_pcvar_num(cvar_leapsniperforce), velocity)
-	else if (g_zombie[id] && !g_assassin[id] && !g_nemesis[id])
+	else if (get_user_zombie(id) && !get_user_assassin(id) && !get_user_nemesis(id))
 		velocity_by_aim(id, get_pcvar_num(cvar_leapzombiesforce), velocity)
 	
 	// Set custom height
-	if (g_survivor[id])
+	if (get_user_survivor(id))
 		velocity[2] = get_pcvar_float(cvar_leapsurvivorheight)
-	else if (g_nemesis[id])
+	else if (get_user_nemesis(id))
 		velocity[2] = get_pcvar_float(cvar_leapnemesisheight)
-	else if (g_assassin[id])
+	else if (get_user_assassin(id))
 		velocity[2] = get_pcvar_float(cvar_leapassassinheight)
-	else if (g_sniper[id])
+	else if (get_user_sniper(id))
 		velocity[2] = get_pcvar_float(cvar_leapsniperheight)
-	else if (g_zombie[id] && !g_assassin[id] && !g_nemesis[id])
+	else if (get_user_zombie(id) && !get_user_assassin(id) && !get_user_nemesis(id))
 		velocity[2] = get_pcvar_float(cvar_leapzombiesheight)
 	
 	// Apply the new velocity
@@ -3662,7 +3668,7 @@ public clcmd_nightvision(id)
 public clcmd_drop(id)
 {
 	// Survivor/Sniper should stick with its weapon
-	if (g_survivor[id] || g_sniper[id])
+	if (get_user_survivor(id) || get_user_sniper(id))
 		return PLUGIN_HANDLED
 	
 	return PLUGIN_CONTINUE;
@@ -3676,7 +3682,7 @@ public clcmd_buyammo(id)
 		return PLUGIN_HANDLED;
 	
 	// Not human
-	if (g_zombie[id])
+	if (get_user_zombie(id))
 	{
 		zp_colored_print(id, "^x04[ZP]^x01 %L", id, "CMD_HUMAN_ONLY")
 		return PLUGIN_HANDLED;
@@ -3808,7 +3814,7 @@ public show_menu_buy1(taskid)
 	(taskid > g_maxplayers) ? (id = ID_SPAWN) : (id = taskid);
 	
 	// Zombies, survivors or snipers get no guns
-	if (!g_isalive[id] || g_zombie[id] || g_survivor[id] || g_sniper[id])
+	if (!g_isalive[id] || get_user_zombie(id) || get_user_survivor(id) || get_user_sniper(id))
 		return;
 	
 	// Bots pick their weapons randomly / Random weapons setting enabled
@@ -3876,22 +3882,22 @@ show_menu_extras(id)
 	static menuid, menu[128], item, team, buffer[32]
 	
 	// Title
-	if (g_zombie[id])
+	if (get_user_zombie(id))
 	{
-		if (g_nemesis[id])
+		if (get_user_nemesis(id))
 			formatex(menu, charsmax(menu), "%L [%L]\r", id, "MENU_EXTRA_TITLE", id, "CLASS_NEMESIS")
-		if (g_assassin[id])
+		if (get_user_assassin(id))
 			formatex(menu, charsmax(menu), "%L [%L]\r", id, "MENU_EXTRA_TITLE", id, "CLASS_ASSASSIN")
-		if (!g_assassin[id] && !g_nemesis[id])
+		if (!get_user_assassin(id) && !get_user_nemesis(id))
 			formatex(menu, charsmax(menu), "%L [%L]\r", id, "MENU_EXTRA_TITLE", id, "CLASS_ZOMBIE")
 	}
 	else
 	{
-		if (g_survivor[id])
+		if (get_user_survivor(id))
 			formatex(menu, charsmax(menu), "%L [%L]\r", id, "MENU_EXTRA_TITLE", id, "CLASS_SURVIVOR")
-		if (g_sniper[id])
+		if (get_user_sniper(id))
 			formatex(menu, charsmax(menu), "%L [%L]\r", id, "MENU_EXTRA_TITLE", id, "CLASS_SNIPER")
-		if (!g_survivor[id] && !g_sniper[id])
+		if (!get_user_survivor(id) && !get_user_sniper(id))
 			formatex(menu, charsmax(menu), "%L [%L]\r", id, "MENU_EXTRA_TITLE", id, "CLASS_HUMAN")
 	}
 	menuid = menu_create(menu, "menu_extras")
@@ -3903,8 +3909,8 @@ show_menu_extras(id)
 		team = ArrayGetCell(g_extraitem_team, item)
 		
 		// Item not available to player's team/class
-		if ((g_zombie[id] && !g_nemesis[id] && !g_assassin[id] &&!(team & ZP_TEAM_ZOMBIE)) || (!g_zombie[id] && !g_survivor[id] && !g_sniper[id] && !(team & ZP_TEAM_HUMAN)) || (g_nemesis[id] && !(team & ZP_TEAM_NEMESIS))
-		|| (g_survivor[id] && !(team & ZP_TEAM_SURVIVOR)) || (g_sniper[id] && !(team & ZP_TEAM_SNIPER)) || (g_assassin[id] && !(team & ZP_TEAM_ASSASSIN)))
+		if ((get_user_zombie(id) && !get_user_nemesis(id) && !get_user_assassin(id) &&!(team & ZP_TEAM_ZOMBIE)) || (!get_user_zombie(id) && !get_user_survivor(id) && !get_user_sniper(id) && !(team & ZP_TEAM_HUMAN)) || (get_user_nemesis(id) && !(team & ZP_TEAM_NEMESIS))
+		|| (get_user_survivor(id) && !(team & ZP_TEAM_SURVIVOR)) || (get_user_sniper(id) && !(team & ZP_TEAM_SNIPER)) || (get_user_assassin(id) && !(team & ZP_TEAM_ASSASSIN)))
 			continue;
 		
 		// Check if it's one of the hardcoded items, check availability, set translated caption
@@ -4269,22 +4275,22 @@ show_menu_player_list(id)
 		{
 			case ACTION_ZOMBIEFY_HUMANIZE: // Zombiefy/Humanize command
 			{
-				if (g_zombie[player])
+				if (get_user_zombie(player))
 				{
 					if (allowed_human(player) && (userflags & g_access_flag[ACCESS_MAKE_HUMAN]))
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ZOMBIE")
 					}
 					else
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ZOMBIE")
@@ -4294,18 +4300,18 @@ show_menu_player_list(id)
 				{
 					if (allowed_zombie(player) && (g_newround ? (userflags & g_access_flag[ACCESS_MODE_INFECTION]) : (userflags & g_access_flag[ACCESS_MAKE_ZOMBIE])))
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_HUMAN")
 					}
 					else
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_HUMAN")
@@ -4316,20 +4322,20 @@ show_menu_player_list(id)
 			{
 				if (allowed_nemesis(player) && (g_newround ? (userflags & g_access_flag[ACCESS_MODE_NEMESIS]) : (userflags & g_access_flag[ACCESS_MAKE_NEMESIS])))
 				{
-					if (g_zombie[player])
+					if (get_user_zombie(player))
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ZOMBIE")
 					}
 					else
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_HUMAN")
@@ -4337,20 +4343,20 @@ show_menu_player_list(id)
 				}
 				else
 				{
-					if (g_zombie[player])
+					if (get_user_zombie(player))
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ZOMBIE")
 					}
 					else
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_HUMAN")
@@ -4361,20 +4367,20 @@ show_menu_player_list(id)
 			{
 				if (allowed_survivor(player) && (g_newround ? (userflags & g_access_flag[ACCESS_MODE_SURVIVOR]) : (userflags & g_access_flag[ACCESS_MAKE_SURVIVOR])))
 				{
-					if (g_zombie[player])
+					if (get_user_zombie(player))
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ZOMBIE")
 					}
 					else
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_HUMAN")
@@ -4382,20 +4388,20 @@ show_menu_player_list(id)
 				}
 				else
 				{
-					if (g_zombie[player])
+					if (get_user_zombie(player))
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ZOMBIE")
 					}
 					else
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_HUMAN")
@@ -4406,20 +4412,20 @@ show_menu_player_list(id)
 			{
 				if (allowed_sniper(player) && (g_newround ? (userflags & g_access_flag[ACCESS_MODE_SNIPER]) : (userflags & g_access_flag[ACCESS_MAKE_SNIPER])))
 				{
-					if (g_zombie[player])
+					if (get_user_zombie(player))
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ZOMBIE")
 					}
 					else
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_HUMAN")
@@ -4427,20 +4433,20 @@ show_menu_player_list(id)
 				}
 				else
 				{
-					if (g_zombie[player])
+					if (get_user_zombie(player))
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ZOMBIE")
 					}
 					else
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_HUMAN")
@@ -4451,20 +4457,20 @@ show_menu_player_list(id)
 			{
 				if (allowed_assassin(player) && (g_newround ? (userflags & g_access_flag[ACCESS_MODE_ASSASSIN]) : (userflags & g_access_flag[ACCESS_MAKE_ASSASSIN])))
 				{
-					if (g_zombie[player])
+					if (get_user_zombie(player))
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "%s \r[%L]", g_playername[player], id, "CLASS_ZOMBIE")
 					}
 					else
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "%s \y[%L]", g_playername[player], id, "CLASS_HUMAN")
@@ -4472,20 +4478,20 @@ show_menu_player_list(id)
 				}
 				else
 				{
-					if (g_zombie[player])
+					if (get_user_zombie(player))
 					{
-						if (g_nemesis[player])
+						if (get_user_nemesis(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_NEMESIS")
-						else if (g_assassin[player])
+						else if (get_user_assassin(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ASSASSIN")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_ZOMBIE")
 					}
 					else
 					{
-						if (g_survivor[player])
+						if (get_user_survivor(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SURVIVOR")
-						else if (g_sniper[player])
+						else if (get_user_sniper(player))
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_SNIPER")
 						else
 							formatex(menu, charsmax(menu), "\d%s [%L]", g_playername[player], id, "CLASS_HUMAN")
@@ -4640,7 +4646,7 @@ public menu_game(id, key)
 public menu_buy1(id, key)
 {
 	// Zombies, survivors or snipers get no guns
-	if (!g_isalive[id] || g_zombie[id] || g_survivor[id] || g_sniper[id])
+	if (!g_isalive[id] || get_user_zombie(id) || get_user_survivor(id) || get_user_sniper(id))
 		return PLUGIN_HANDLED;
 	
 	// Special keys / weapon list exceeded
@@ -4718,7 +4724,7 @@ buy_primary_weapon(id, selection)
 public menu_buy2(id, key)
 {	
 	// Zombies, survivors or snipers get no guns
-	if (!g_isalive[id] || g_zombie[id] || g_survivor[id] || g_sniper[id])
+	if (!g_isalive[id] || get_user_zombie(id) || get_user_survivor(id) || get_user_sniper(id))
 		return PLUGIN_HANDLED;
 	
 	// Special keys / weapon list exceeded
@@ -4790,8 +4796,8 @@ buy_extra_item(id, itemid, ignorecost = 0)
 	team = ArrayGetCell(g_extraitem_team, itemid)
 	
 	// Check for team/class specific items
-	if ((g_zombie[id] && !g_nemesis[id] && !g_assassin[id] && !(team & ZP_TEAM_ZOMBIE)) || (!g_zombie[id] && !g_survivor[id] && !g_sniper[id] && !(team & ZP_TEAM_HUMAN)) || (g_nemesis[id] && !(team & ZP_TEAM_NEMESIS))
-	|| (g_survivor[id] && !(team & ZP_TEAM_SURVIVOR)) || (g_sniper[id] && !(team & ZP_TEAM_SNIPER)) || (g_assassin[id] && !(team & ZP_TEAM_ASSASSIN)))
+	if ((get_user_zombie(id) && !get_user_nemesis(id) && !get_user_assassin(id) && !(team & ZP_TEAM_ZOMBIE)) || (!get_user_zombie(id) && !get_user_survivor(id) && !get_user_sniper(id) && !(team & ZP_TEAM_HUMAN)) || (get_user_nemesis(id) && !(team & ZP_TEAM_NEMESIS))
+	|| (get_user_survivor(id) && !(team & ZP_TEAM_SURVIVOR)) || (get_user_sniper(id) && !(team & ZP_TEAM_SNIPER)) || (get_user_assassin(id) && !(team & ZP_TEAM_ASSASSIN)))
 	{
 		zp_colored_print(id, "^x04[ZP]^x01 %L", id, "CMD_NOT")
 		return;
@@ -5015,17 +5021,15 @@ public menu_mode(id, menuid, item)
 		show_menu_game_mode(id)
 		return PLUGIN_HANDLED;
 	}
-	else
-	{
-		// Player deosnt haves the required access level
-		zp_colored_print(id, "^x04[ZP]^x01 %L", id, "CMD_NOT_ACCESS")
-		
-		// Show the menu again
-		show_menu_game_mode(id)
-		return PLUGIN_HANDLED;
-	}
-	
+
+	// Player deosnt haves the required access level
+	zp_colored_print(id, "^x04[ZP]^x01 %L", id, "CMD_NOT_ACCESS")
+
 	menu_destroy(menuid)
+
+	// Show the menu again
+	show_menu_game_mode(id)
+
 	return PLUGIN_HANDLED;
 }
 
@@ -5460,7 +5464,7 @@ public menu_player_list(id, menuid, item)
 		{
 			case ACTION_ZOMBIEFY_HUMANIZE: // Zombiefy/Humanize command
 			{
-				if (g_zombie[playerid])
+				if (get_user_zombie(playerid))
 				{
 					if (userflags & g_access_flag[ACCESS_MAKE_HUMAN])
 					{
@@ -5909,7 +5913,7 @@ public cmd_lnj(id, level, cid)
 public message_cur_weapon(msg_id, msg_dest, msg_entity)
 {
 	// Not alive or zombie
-	if (!g_isalive[msg_entity] || g_zombie[msg_entity])
+	if (!g_isalive[msg_entity] || get_user_zombie(msg_entity))
 		return;
 	
 	// Not an active weapon
@@ -5917,7 +5921,7 @@ public message_cur_weapon(msg_id, msg_dest, msg_entity)
 		return;
 	
 	// Unlimited clip disabled for class
-	if (g_survivor[msg_entity] ? get_pcvar_num(cvar_survinfammo) <= 1 : get_pcvar_num(cvar_infammo) <= 1 && g_sniper[msg_entity] ? get_pcvar_num(cvar_sniperinfammo) <= 1 : get_pcvar_num(cvar_infammo) <= 1)
+	if (get_user_survivor(msg_entity) ? get_pcvar_num(cvar_survinfammo) <= 1 : get_pcvar_num(cvar_infammo) <= 1 && get_user_sniper(msg_entity) ? get_pcvar_num(cvar_sniperinfammo) <= 1 : get_pcvar_num(cvar_infammo) <= 1)
 		return;
 	
 	// Get weapon's id
@@ -5980,7 +5984,7 @@ public message_screenfade(msg_id, msg_dest, msg_entity)
 		return PLUGIN_CONTINUE;
 	
 	// Nemesis/Assassin shouldn't be FBed
-	if (g_zombie[msg_entity] && !g_nemesis[msg_entity] && !g_assassin[msg_entity])
+	if (get_user_zombie(msg_entity) && !get_user_nemesis(msg_entity) && !get_user_assassin(msg_entity))
 	{
 		// Set flash color to nighvision's
 		set_msg_arg_int(4, get_msg_argtype(4), get_pcvar_num(cvar_nvgcolor[0]))
@@ -6007,7 +6011,7 @@ public message_clcorpse()
 // Prevent zombies from seeing any weapon pickup icon
 public message_weappickup(msg_id, msg_dest, msg_entity)
 {
-	if (g_zombie[msg_entity])
+	if (get_user_zombie(msg_entity))
 		return PLUGIN_HANDLED;
 	
 	return PLUGIN_CONTINUE;
@@ -6016,7 +6020,7 @@ public message_weappickup(msg_id, msg_dest, msg_entity)
 // Prevent zombies from seeing any ammo pickup icon
 public message_ammopickup(msg_id, msg_dest, msg_entity)
 {
-	if (g_zombie[msg_entity])
+	if (get_user_zombie(msg_entity))
 		return PLUGIN_HANDLED;
 	
 	return PLUGIN_CONTINUE;
@@ -6296,7 +6300,7 @@ start_plague_mode(id, mode)
 			id = fnGetRandomAlive(random_num(1, iPlayersnum))
 			
 			// Already a survivor?
-			if (g_survivor[id])
+			if (get_user_survivor(id))
 				continue;
 			
 			// If not, turn him into one
@@ -6318,7 +6322,7 @@ start_plague_mode(id, mode)
 			id = fnGetRandomAlive(random_num(1, iPlayersnum))
 			
 			// Already a survivor or nemesis?
-			if (g_survivor[id] || g_nemesis[id])
+			if (get_user_survivor(id) || get_user_nemesis(id))
 				continue;
 			
 			// If not, turn him into one
@@ -6340,7 +6344,7 @@ start_plague_mode(id, mode)
 			if (++id > g_maxplayers) id = 1
 			
 			// Dead or already a zombie or survivor
-			if (!g_isalive[id] || g_zombie[id] || g_survivor[id])
+			if (!g_isalive[id] || get_user_zombie(id) || get_user_survivor(id))
 				continue;
 			
 			// Random chance
@@ -6356,7 +6360,7 @@ start_plague_mode(id, mode)
 		for (id = 1; id <= g_maxplayers; id++)
 		{
 			// Only those of them who arent zombies or survivor
-			if (!g_isalive[id] || g_zombie[id] || g_survivor[id])
+			if (!g_isalive[id] || get_user_zombie(id) || get_user_survivor(id))
 				continue;
 			
 			// Switch to CT
@@ -6432,7 +6436,7 @@ start_multi_mode(id, mode)
 			if (++id > g_maxplayers) id = 1
 			
 			// Dead or already a zombie
-			if (!g_isalive[id] || g_zombie[id])
+			if (!g_isalive[id] || get_user_zombie(id))
 				continue;
 			
 			// Random chance
@@ -6448,7 +6452,7 @@ start_multi_mode(id, mode)
 		for (id = 1; id <= g_maxplayers; id++)
 		{
 			// Only those of them who aren't zombies
-			if (!g_isalive[id] || g_zombie[id])
+			if (!g_isalive[id] || get_user_zombie(id))
 				continue;
 			
 			// Switch to CT
@@ -6524,7 +6528,7 @@ start_lnj_mode(id, mode)
 			if (++id > g_maxplayers) id = 1
 			
 			// Dead or already a zombie or survivor
-			if (!g_isalive[id] || g_zombie[id] || g_survivor[id])
+			if (!g_isalive[id] || get_user_zombie(id) || get_user_survivor(id))
 				continue;
 			
 			// Random chance
@@ -6541,7 +6545,7 @@ start_lnj_mode(id, mode)
 		for (id = 1; id <= g_maxplayers; id++)
 		{
 			// Only those of them who arent zombies or survivor
-			if (!g_isalive[id] || g_zombie[id] || g_survivor[id])
+			if (!g_isalive[id] || get_user_zombie(id) || get_user_survivor(id))
 				continue;
 			
 			// Turn into a Survivor
@@ -6619,7 +6623,7 @@ start_sniper_mode(id, mode)
 				continue;
 			
 			// Sniper or already a zombie
-			if (g_sniper[id] || g_zombie[id] )
+			if (get_user_sniper(id) || get_user_zombie(id) )
 				continue;
 			
 			// Turn into a zombie
@@ -6696,7 +6700,7 @@ start_survivor_mode(id, mode)
 				continue;
 			
 			// Survivor or already a zombie
-			if (g_survivor[id] || g_zombie[id] )
+			if (get_user_survivor(id) || get_user_zombie(id) )
 				continue;
 			
 			// Turn into a zombie
@@ -6781,7 +6785,7 @@ start_assassin_mode(id, mode)
 				continue;
 			
 			// First assassin
-			if (g_zombie[id])
+			if (get_user_zombie(id))
 				continue;
 			
 			// Switch to CT
@@ -6882,7 +6886,7 @@ start_nemesis_mode(id, mode)
 				continue;
 			
 			// First nemesis
-			if (g_zombie[id])
+			if (get_user_zombie(id))
 				continue;
 			
 			// Switch to CT
@@ -6982,7 +6986,7 @@ start_custom_mode()
 				for (id = 1; id <= g_maxplayers; id++)
 				{
 					// Only those of them who arent zombies or survivor
-					if (!g_isalive[id] || g_zombie[id] || g_survivor[id] || g_sniper[id])
+					if (!g_isalive[id] || get_user_zombie(id) || get_user_survivor(id) || get_user_sniper(id))
 						continue;
 					
 					// Switch to CT
@@ -7042,7 +7046,7 @@ start_infection_mode(id, mode)
 			continue;
 		
 		// First zombie
-		if (g_zombie[id])
+		if (get_user_zombie(id))
 			continue;
 		
 		// Switch to CT
@@ -7101,12 +7105,13 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 	if (g_zombieclass[id] == ZCLASS_NONE) g_zombieclass[id] = 0
 	
 	// Way to go...
-	g_zombie[id] = true
-	g_nemesis[id] = false
-	g_assassin[id] = false
-	g_survivor[id] = false
+	set_user_zombie(id, 1)
+	set_user_nemesis(id, 0)
+	set_user_assassin(id, 0)
+	set_user_survivor(id, 0)
+	set_user_sniper(id, 0) 
 	g_firstzombie[id] = false
-	g_sniper[id] = false
+	
 	
 	// Remove aura (bugfix)
 	remove_task(id+TASK_AURA)
@@ -7143,7 +7148,7 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 		if (nemesis)
 		{
 			// Nemesis
-			g_nemesis[id] = true
+			set_user_nemesis(id, 1)
 			
 			// Set health [0 = auto]
 			if (get_pcvar_num(cvar_nemhp) == 0)
@@ -7163,7 +7168,7 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 		else if (assassin)
 		{
 			// Assassin
-			g_assassin[id] = true
+			set_user_assassin(id, 1)
 			
 			// Set health [0 = auto]
 			if (get_pcvar_num(cvar_assassinhp) == 0)
@@ -7180,7 +7185,7 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 			if (!g_frozen[id]) set_pev(id, pev_gravity, get_pcvar_float(cvar_assassingravity))
 		}
 		
-		else if ((fnGetZombies() == 1) && !g_assassin[id] && !g_nemesis[id] )
+		else if ((fnGetZombies() == 1) && !get_user_assassin(id) && !get_user_nemesis(id) )
 		{
 			// First zombie
 			g_firstzombie[id] = true
@@ -7245,13 +7250,13 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 	if (g_handle_models_on_separate_ent)
 	{
 		// Set the right model
-		if (g_nemesis[id])
+		if (get_user_nemesis(id))
 		{
 			iRand = random_num(0, ArraySize(model_nemesis) - 1)
 			ArrayGetString(model_nemesis, iRand, g_playermodel[id], charsmax(g_playermodel[]))
 			if (g_set_modelindex_offset) fm_cs_set_user_model_index(id, ArrayGetCell(g_modelindex_nemesis, iRand))
 		}
-		else if (g_assassin[id])
+		else if (get_user_assassin(id))
 		{
 			iRand = random_num(0, ArraySize(model_assassin) - 1)
 			ArrayGetString(model_assassin, iRand, g_playermodel[id], charsmax(g_playermodel[]))
@@ -7279,17 +7284,17 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 		// Nemesis glow / remove glow on player model entity, unless frozen
 		if (!g_frozen[id])
 		{
-			if (g_nemesis[id] && get_pcvar_num(cvar_nemglow))
+			if (get_user_nemesis(id) && get_pcvar_num(cvar_nemglow))
 				fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 250, 0 , 0, kRenderNormal, 25)
-			else if (g_nemesis[id] && !(get_pcvar_num(cvar_nemglow)))
+			else if (get_user_nemesis(id) && !(get_pcvar_num(cvar_nemglow)))
 				fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 0 , 0, kRenderNormal, 25)
 				
-			else if (g_assassin[id] && get_pcvar_num(cvar_assassinglow))
+			else if (get_user_assassin(id) && get_pcvar_num(cvar_assassinglow))
 				fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 250, 0 , 0, kRenderNormal, 25)
-			else if (g_assassin[id] && !(get_pcvar_num(cvar_assassinglow)))
+			else if (get_user_assassin(id) && !(get_pcvar_num(cvar_assassinglow)))
 				fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 0 , 0, kRenderNormal, 25)
 				
-			else if (!g_assassin[id] && !g_nemesis[id])
+			else if (!get_user_assassin(id) && !get_user_nemesis(id))
 				fm_set_rendering(g_ent_playermodel[id])
 		}
 	}
@@ -7299,7 +7304,7 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 		fm_cs_get_user_model(id, currentmodel, charsmax(currentmodel))
 		
 		// Set the right model, after checking that we don't already have it
-		if (g_nemesis[id])
+		if (get_user_nemesis(id))
 		{
 			size = ArraySize(model_nemesis)
 			for (i = 0; i < size; i++)
@@ -7316,7 +7321,7 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 			}
 		}
 		
-		else if (g_assassin[id])
+		else if (get_user_assassin(id))
 		{
 			size = ArraySize(model_assassin)
 			for (i = 0; i < size; i++)
@@ -7382,17 +7387,17 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 		// Nemesis glow / remove glow, unless frozen
 		if (!g_frozen[id])
 		{
-			if (g_nemesis[id] && get_pcvar_num(cvar_nemglow))
+			if (get_user_nemesis(id) && get_pcvar_num(cvar_nemglow))
 				fm_set_rendering(id, kRenderFxGlowShell, 250, 0, 0, kRenderNormal, 25)
-			else if (g_nemesis[id] && !(get_pcvar_num(cvar_nemglow)))
+			else if (get_user_nemesis(id) && !(get_pcvar_num(cvar_nemglow)))
 				fm_set_rendering(id, kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 				
-			else if (g_assassin[id] && get_pcvar_num(cvar_assassinglow))
+			else if (get_user_assassin(id) && get_pcvar_num(cvar_assassinglow))
 				fm_set_rendering(id, kRenderFxGlowShell, 250, 0, 0, kRenderNormal, 25)
-			else if (g_assassin[id] && !(get_pcvar_num(cvar_assassinglow)))
+			else if (get_user_assassin(id) && !(get_pcvar_num(cvar_assassinglow)))
 				fm_set_rendering(id, kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 				
-			else if (!g_assassin[id] && !g_nemesis[id])
+			else if (!get_user_assassin(id) && !get_user_nemesis(id))
 				fm_set_rendering(id)
 		}
 	}
@@ -7415,11 +7420,11 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 	infection_effects(id)
 	
 	// Nemesis aura task
-	if (g_nemesis[id] && get_pcvar_num(cvar_nemaura))
+	if (get_user_nemesis(id) && get_pcvar_num(cvar_nemaura))
 		set_task(0.1, "zombie_aura", id+TASK_AURA, _, _, "b")
 		
 	// Assassin aura task
-	if (g_assassin[id] && get_pcvar_num(cvar_assassinaura))
+	if (get_user_assassin(id) && get_pcvar_num(cvar_assassinaura))
 		set_task(0.1, "zombie_aura", id+TASK_AURA, _, _, "b")
 	
 	// Give Zombies Night Vision?
@@ -7473,11 +7478,11 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 	}
 	
 	// Call the bloody task
-	if (!g_nemesis[id] && !g_assassin[id] && get_pcvar_num(cvar_zombiebleeding))
+	if (!get_user_nemesis(id) && !get_user_assassin(id) && get_pcvar_num(cvar_zombiebleeding))
 		set_task(0.7, "make_blood", id+TASK_BLOOD, _, _, "b")
 	
 	// Idle sounds task
-	if (!g_nemesis[id] && !g_assassin[id])
+	if (!get_user_nemesis(id) && !get_user_assassin(id))
 		set_task(random_float(50.0, 70.0), "zombie_play_idle", id+TASK_BLOOD, _, _, "b")
 	
 	// Turn off zombie's flashlight
@@ -7513,15 +7518,16 @@ humanme(id, survivor, silentmode, sniper)
 	remove_task(id+TASK_NVISION)
 	
 	// Reset some vars
-	g_zombie[id] = false
-	g_nemesis[id] = false
-	g_survivor[id] = false
+	set_user_zombie(id, 0)
+	set_user_nemesis(id, 0)
+	set_user_assassin(id, 0)
+	set_user_survivor(id, 0)
+	set_user_sniper(id, 0)
 	g_firstzombie[id] = false
 	g_canbuy[id] = true
 	g_nvision[id] = false
 	g_nvisionenabled[id] = false
-	g_sniper[id] = false
-	g_assassin[id] = false
+	
 	
 	// Remove survivor/sniper's aura (bugfix)
 	remove_task(id+TASK_AURA)
@@ -7545,7 +7551,7 @@ humanme(id, survivor, silentmode, sniper)
 	if (survivor)
 	{
 		// Survivor
-		g_survivor[id] = true
+		set_user_survivor(id, 1)
 		
 		// Set Health [0 = auto]
 		if (get_pcvar_num(cvar_survhp) == 0)
@@ -7584,7 +7590,7 @@ humanme(id, survivor, silentmode, sniper)
 	else if (sniper)
 	{
 		// Sniper
-		g_sniper[id] = true
+		set_user_sniper(id, 1)
 		
 		// Set Health [0 = auto]
 		if (get_pcvar_num(cvar_sniperhp) == 0)
@@ -7661,13 +7667,13 @@ humanme(id, survivor, silentmode, sniper)
 	if (g_handle_models_on_separate_ent)
 	{
 		// Set the right model
-		if (g_survivor[id])
+		if (get_user_survivor(id))
 		{
 			iRand = random_num(0, ArraySize(model_survivor) - 1)
 			ArrayGetString(model_survivor, iRand, g_playermodel[id], charsmax(g_playermodel[]))
 			if (g_set_modelindex_offset) fm_cs_set_user_model_index(id, ArrayGetCell(g_modelindex_survivor, iRand))
 		}
-		else if (g_sniper[id])
+		else if (get_user_sniper(id))
 		{
 			iRand = random_num(0, ArraySize(model_sniper) - 1)
 			ArrayGetString(model_sniper, iRand, g_playermodel[id], charsmax(g_playermodel[]))
@@ -7695,17 +7701,17 @@ humanme(id, survivor, silentmode, sniper)
 		// Set survivor glow / remove glow on player model entity, unless frozen
 		if (!g_frozen[id])
 		{
-			if (g_survivor[id] && get_pcvar_num(cvar_survglow)) 
+			if (get_user_survivor(id) && get_pcvar_num(cvar_survglow)) 
 				fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 250, 250, kRenderNormal, 25)
-			else if (g_survivor[id] && !(get_pcvar_num(cvar_survglow))) 
+			else if (get_user_survivor(id) && !(get_pcvar_num(cvar_survglow))) 
 				fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 				
-			else if (g_sniper[id] && get_pcvar_num(cvar_sniperglow))
+			else if (get_user_sniper(id) && get_pcvar_num(cvar_sniperglow))
 				fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, get_pcvar_num(cvar_snipercolor[0]), get_pcvar_num(cvar_snipercolor[1]), get_pcvar_num(cvar_snipercolor[2]), kRenderNormal, 25)
-			else if (g_sniper[id] && !(get_pcvar_num(cvar_sniperglow)))
+			else if (get_user_sniper(id) && !(get_pcvar_num(cvar_sniperglow)))
 				fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 			
-			else if (!g_sniper[id] && !g_survivor[id])
+			else if (!get_user_sniper(id) && !get_user_survivor(id))
 				fm_set_rendering(g_ent_playermodel[id])
 		}
 	}
@@ -7715,7 +7721,7 @@ humanme(id, survivor, silentmode, sniper)
 		fm_cs_get_user_model(id, currentmodel, charsmax(currentmodel))
 		
 		// Set the right model, after checking that we don't already have it
-		if (g_survivor[id])
+		if (get_user_survivor(id))
 		{
 			size = ArraySize(model_survivor)
 			for (i = 0; i < size; i++)
@@ -7731,7 +7737,7 @@ humanme(id, survivor, silentmode, sniper)
 				if (g_set_modelindex_offset) fm_cs_set_user_model_index(id, ArrayGetCell(g_modelindex_survivor, iRand))
 			}
 		}
-		else if (g_sniper[id])
+		else if (get_user_sniper(id))
 		{
 			size = ArraySize(model_sniper)
 			for (i = 0; i < size; i++)
@@ -7797,17 +7803,17 @@ humanme(id, survivor, silentmode, sniper)
 		// Set survivor glow / remove glow, unless frozen
 		if (!g_frozen[id])
 		{
-			if (g_survivor[id] && get_pcvar_num(cvar_survglow)) 
+			if (get_user_survivor(id) && get_pcvar_num(cvar_survglow)) 
 				fm_set_rendering(id, kRenderFxGlowShell, 0, 250, 250, kRenderNormal, 25)
-			else if (g_survivor[id] && !(get_pcvar_num(cvar_survglow))) 
+			else if (get_user_survivor(id) && !(get_pcvar_num(cvar_survglow))) 
 				fm_set_rendering(id, kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 				
-			else if (g_sniper[id] && get_pcvar_num(cvar_sniperglow))
+			else if (get_user_sniper(id) && get_pcvar_num(cvar_sniperglow))
 				fm_set_rendering(id, kRenderFxGlowShell, get_pcvar_num(cvar_snipercolor[0]), get_pcvar_num(cvar_snipercolor[1]), get_pcvar_num(cvar_snipercolor[2]), kRenderNormal, 25)
-			else if (g_sniper[id] && !(get_pcvar_num(cvar_sniperglow)))
+			else if (get_user_sniper(id) && !(get_pcvar_num(cvar_sniperglow)))
 				fm_set_rendering(id, kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 			
-			else if (!g_sniper[id] && !g_survivor[id])
+			else if (!get_user_sniper(id) && !get_user_survivor(id))
 				fm_set_rendering(id)
 		}
 	}
@@ -9316,10 +9322,10 @@ public disable_minmodels(id)
 public bot_buy_extras(taskid)
 {
 	// Nemesis, Survivor or Sniper bots have nothing to buy by default
-	if (!g_isalive[ID_SPAWN] || g_survivor[ID_SPAWN] || g_nemesis[ID_SPAWN] || g_sniper[ID_SPAWN])
+	if (!g_isalive[ID_SPAWN] || get_user_survivor(ID_SPAWN) || get_user_nemesis(ID_SPAWN) || get_user_sniper(ID_SPAWN))
 		return;
 	
-	if (!g_zombie[ID_SPAWN]) // human bots
+	if (!get_user_zombie(ID_SPAWN)) // human bots
 	{
 		// Attempt to buy Night Vision
 		buy_extra_item(ID_SPAWN, EXTRA_NVISION)
@@ -9338,7 +9344,7 @@ public bot_buy_extras(taskid)
 public refill_bpammo(const args[], id)
 {
 	// Player died or turned into a zombie
-	if (!g_isalive[id] || g_zombie[id])
+	if (!g_isalive[id] || get_user_zombie(id))
 		return;
 	
 	set_msg_block(g_msgAmmoPickup, BLOCK_ONCE)
@@ -9469,7 +9475,7 @@ check_round(leaving_player)
 		return;
 	
 	// Last zombie disconnecting
-	if (g_zombie[leaving_player] && fnGetZombies() == 1)
+	if (get_user_zombie(leaving_player) && fnGetZombies() == 1)
 	{
 		// Only one CT left, don't bother
 		if (fnGetHumans() == 1 && fnGetCTs() == 1)
@@ -9485,9 +9491,9 @@ check_round(leaving_player)
 		g_lastplayerleaving = true
 		
 		// Turn into a Nemesis, Assassin or just a zombie?
-		if (g_nemesis[leaving_player])
+		if (get_user_nemesis(leaving_player))
 			zombieme(id, 0, 1, 0, 0, 0)
-		else if (g_assassin[leaving_player])
+		else if (get_user_assassin(leaving_player))
 			zombieme(id, 0, 0, 0, 0, 1)
 		else
 			zombieme(id, 0, 0, 0, 0, 0)
@@ -9496,16 +9502,16 @@ check_round(leaving_player)
 		g_lastplayerleaving = false
 		
 		// If Nemesis, set chosen player's health to that of the one who's leaving
-		if (get_pcvar_num(cvar_keephealthondisconnect) && g_nemesis[leaving_player])
+		if (get_pcvar_num(cvar_keephealthondisconnect) && get_user_nemesis(leaving_player))
 			fm_set_user_health(id, pev(leaving_player, pev_health))
 			
 		// If Assassin, set chosen player's health to that of the one who's leaving
-		if (get_pcvar_num(cvar_keephealthondisconnect) && g_assassin[leaving_player])
+		if (get_pcvar_num(cvar_keephealthondisconnect) && get_user_assassin(leaving_player))
 			fm_set_user_health(id, pev(leaving_player, pev_health))
 	}
 	
 	// Last human disconnecting
-	else if (!g_zombie[leaving_player] && fnGetHumans() == 1)
+	else if (!get_user_zombie(leaving_player) && fnGetHumans() == 1)
 	{
 		// Only one T left, don't bother
 		if (fnGetZombies() == 1 && fnGetTs() == 1)
@@ -9521,9 +9527,9 @@ check_round(leaving_player)
 		g_lastplayerleaving = true
 		
 		// Turn into a Survivor, Sniper or just a human?
-		if (g_survivor[leaving_player])
+		if (get_user_survivor(leaving_player))
 			humanme(id, 1, 0, 0)
-		else if (g_sniper[leaving_player])
+		else if (get_user_sniper(leaving_player))
 			humanme(id, 0, 0, 1)
 		else
 			humanme(id, 0, 0, 0)
@@ -9532,11 +9538,11 @@ check_round(leaving_player)
 		g_lastplayerleaving = false
 		
 		// If Survivor, set chosen player's health to that of the one who's leaving
-		if (get_pcvar_num(cvar_keephealthondisconnect) && g_survivor[leaving_player])
+		if (get_pcvar_num(cvar_keephealthondisconnect) && get_user_survivor(leaving_player))
 			fm_set_user_health(id, pev(leaving_player, pev_health))
 		
 		// If Sniper, set chosen player's health to that of the one who's leaving
-		if (get_pcvar_num(cvar_keephealthondisconnect) && g_sniper[leaving_player])
+		if (get_pcvar_num(cvar_keephealthondisconnect) && get_user_sniper(leaving_player))
 			fm_set_user_health(id, pev(leaving_player, pev_health))
 	}
 }
@@ -9836,19 +9842,19 @@ public event_show_status(id)
 		aimid = read_data(2)
 		
 		// Only show friends status ?
-		if (g_zombie[id] == g_zombie[aimid])
+		if (get_user_zombie(id) == get_user_zombie(aimid))
 		{
 			static class[32], red, blue
 			
 			// Format the class name according to the player's team
-			if (g_zombie[id])
+			if (get_user_zombie(id))
 			{
 				red = 255
 				blue = 0
 				
-				if (g_nemesis[aimid])
+				if (get_user_nemesis(aimid))
 					formatex(class, charsmax(class), "%L %L", id, "CLASS_CLASS", id, "CLASS_NEMESIS")
-				else if (g_assassin[aimid])
+				else if (get_user_assassin(aimid))
 					formatex(class, charsmax(class), "%L %L", id, "CLASS_CLASS", id, "CLASS_ASSASSIN")
 				else
 					formatex(class, charsmax(class), "%L %s", id, "CLASS_CLASS", g_zombie_classname[aimid])
@@ -9858,9 +9864,9 @@ public event_show_status(id)
 				red = 0
 				blue = 255
 				
-				if (g_survivor[aimid])
+				if (get_user_survivor(aimid))
 					formatex(class, charsmax(class), "%L %L", id, "CLASS_CLASS", id, "CLASS_SURVIVOR")
-				else if (g_sniper[aimid])
+				else if (get_user_sniper(aimid))
 					formatex(class, charsmax(class), "%L %L", id, "CLASS_CLASS", id, "CLASS_SNIPER")
 				else
 					formatex(class, charsmax(class), "%L %L", id, "CLASS_CLASS", id, "CLASS_HUMAN")
@@ -9929,7 +9935,7 @@ infection_explode(ent)
 	while ((victim = engfunc(EngFunc_FindEntityInSphere, victim, originF, NADE_EXPLOSION_RADIUS)) != 0)
 	{
 		// Only effect alive non-spawnprotected humans
-		if (!is_user_valid_alive(victim) || g_zombie[victim] || g_nodamage[victim])
+		if (!is_user_valid_alive(victim) || get_user_zombie(victim) || g_nodamage[victim])
 			continue;
 		
 		// Last human is killed
@@ -9973,7 +9979,7 @@ fire_explode(ent)
 	while ((victim = engfunc(EngFunc_FindEntityInSphere, victim, originF, NADE_EXPLOSION_RADIUS)) != 0)
 	{
 		// Only effect alive zombies
-		if (!is_user_valid_alive(victim) || !g_zombie[victim] || g_nodamage[victim])
+		if (!is_user_valid_alive(victim) || !get_user_zombie(victim) || g_nodamage[victim])
 			continue;
 		
 		// Heat icon?
@@ -9989,7 +9995,7 @@ fire_explode(ent)
 			message_end()
 		}
 		
-		if (g_nemesis[victim] || g_assassin[victim]) // fire duration (nemesis/assassin is fire resistant)
+		if (get_user_nemesis(victim) || get_user_assassin(victim)) // fire duration (nemesis/assassin is fire resistant)
 			g_burning_duration[victim] += get_pcvar_num(cvar_fireduration)
 		else
 			g_burning_duration[victim] += get_pcvar_num(cvar_fireduration) * 5
@@ -10025,11 +10031,11 @@ frost_explode(ent)
 	while ((victim = engfunc(EngFunc_FindEntityInSphere, victim, originF, NADE_EXPLOSION_RADIUS)) != 0)
 	{
 		// Only effect alive unfrozen zombies
-		if (!is_user_valid_alive(victim) || !g_zombie[victim] || g_frozen[victim] || g_nodamage[victim])
+		if (!is_user_valid_alive(victim) || !get_user_zombie(victim) || g_frozen[victim] || g_nodamage[victim])
 			continue;
 		
 		// Nemesis and Assassin shouldn't be frozen
-		if (g_nemesis[victim] || g_assassin[victim])
+		if (get_user_nemesis(victim) || get_user_assassin(victim))
 		{
 			// Get player's origin
 			static origin2[3]
@@ -10121,20 +10127,20 @@ public remove_freeze(id)
 	g_frozen[id] = false;
 	
 	// Restore gravity
-	if (g_zombie[id])
+	if (get_user_zombie(id))
 	{
-		if (g_nemesis[id])
+		if (get_user_nemesis(id))
 			set_pev(id, pev_gravity, get_pcvar_float(cvar_nemgravity))
-		else if (g_assassin[id])
+		else if (get_user_assassin(id))
 			set_pev(id, pev_gravity, get_pcvar_float(cvar_assassingravity))
 		else
 			set_pev(id, pev_gravity, Float:ArrayGetCell(g_zclass_grav, g_zombieclass[id]))
 	}
 	else
 	{
-		if (g_survivor[id])
+		if (get_user_survivor(id))
 			set_pev(id, pev_gravity, get_pcvar_float(cvar_survgravity))
-		else if (g_sniper[id])
+		else if (get_user_sniper(id))
 			set_pev(id, pev_gravity, get_pcvar_float(cvar_snipergravity))
 		else
 			set_pev(id, pev_gravity, get_pcvar_float(cvar_humangravity))
@@ -10144,24 +10150,24 @@ public remove_freeze(id)
 	if (g_handle_models_on_separate_ent)
 	{
 		// Nemesis, Assassin, Survivor or Sniper glow / remove glow on player model entity
-		if (g_nemesis[id] && get_pcvar_num(cvar_nemglow))
+		if (get_user_nemesis(id) && get_pcvar_num(cvar_nemglow))
 			fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 250, 0, 0, kRenderNormal, 25)
-		else if (g_nemesis[id] && !(get_pcvar_num(cvar_nemglow)))
+		else if (get_user_nemesis(id) && !(get_pcvar_num(cvar_nemglow)))
 			fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 			
-		else if (g_assassin[id] && get_pcvar_num(cvar_assassinglow))
+		else if (get_user_assassin(id) && get_pcvar_num(cvar_assassinglow))
 			fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 250, 0, 0, kRenderNormal, 25)
-		else if (g_assassin[id] && !(get_pcvar_num(cvar_assassinglow)))
+		else if (get_user_assassin(id) && !(get_pcvar_num(cvar_assassinglow)))
 			fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)	
 		
-		else if (g_survivor[id] && get_pcvar_num(cvar_survglow))
+		else if (get_user_survivor(id) && get_pcvar_num(cvar_survglow))
 			fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 250, 250, kRenderNormal, 25)
-		else if (g_survivor[id] && !(get_pcvar_num(cvar_survglow)))
+		else if (get_user_survivor(id) && !(get_pcvar_num(cvar_survglow)))
 			fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 		
-		else if (g_sniper[id] && get_pcvar_num(cvar_sniperglow))
+		else if (get_user_sniper(id) && get_pcvar_num(cvar_sniperglow))
 			fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, get_pcvar_num(cvar_snipercolor[0]), get_pcvar_num(cvar_snipercolor[1]), get_pcvar_num(cvar_snipercolor[2]), kRenderNormal, 25)
-		else if (g_sniper[id] && !(get_pcvar_num(cvar_sniperglow)))
+		else if (get_user_sniper(id) && !(get_pcvar_num(cvar_sniperglow)))
 			fm_set_rendering(g_ent_playermodel[id], kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 		
 		else
@@ -10170,24 +10176,24 @@ public remove_freeze(id)
 	else
 	{
 		// Nemesis, Assassin, Survivor or Sniper glow / remove glow
-		if (g_nemesis[id] && get_pcvar_num(cvar_nemglow))
+		if (get_user_nemesis(id) && get_pcvar_num(cvar_nemglow))
 			fm_set_rendering(id, kRenderFxGlowShell, 250, 0, 0, kRenderNormal, 25)
-		else if (g_nemesis[id] && !(get_pcvar_num(cvar_nemglow)))
+		else if (get_user_nemesis(id) && !(get_pcvar_num(cvar_nemglow)))
 			fm_set_rendering(id, kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 			
-		else if (g_assassin[id] && get_pcvar_num(cvar_assassinglow))
+		else if (get_user_assassin(id) && get_pcvar_num(cvar_assassinglow))
 			fm_set_rendering(id, kRenderFxGlowShell, 250, 0, 0, kRenderNormal, 25)
-		else if (g_assassin[id] && !(get_pcvar_num(cvar_assassinglow)))
+		else if (get_user_assassin(id) && !(get_pcvar_num(cvar_assassinglow)))
 			fm_set_rendering(id, kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)	
 		
-		else if (g_survivor[id] && get_pcvar_num(cvar_survglow))
+		else if (get_user_survivor(id) && get_pcvar_num(cvar_survglow))
 			fm_set_rendering(id, kRenderFxGlowShell, 0, 250, 250, kRenderNormal, 25)
-		else if (g_survivor[id] && !(get_pcvar_num(cvar_survglow)))
+		else if (get_user_survivor(id) && !(get_pcvar_num(cvar_survglow)))
 			fm_set_rendering(id, kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 		
-		else if (g_sniper[id] && get_pcvar_num(cvar_sniperglow))
+		else if (get_user_sniper(id) && get_pcvar_num(cvar_sniperglow))
 			fm_set_rendering(id, kRenderFxGlowShell, get_pcvar_num(cvar_snipercolor[0]), get_pcvar_num(cvar_snipercolor[1]), get_pcvar_num(cvar_snipercolor[2]), kRenderNormal, 25)
-		else if (g_sniper[id] && !(get_pcvar_num(cvar_sniperglow)))
+		else if (get_user_sniper(id) && !(get_pcvar_num(cvar_sniperglow)))
 			fm_set_rendering(id, kRenderFxGlowShell, 0, 0, 0, kRenderNormal, 25)
 		
 		else
@@ -10276,14 +10282,14 @@ replace_weapon_models(id, weaponid)
 	{
 		case CSW_KNIFE: // Custom knife models
 		{
-			if (g_zombie[id])
+			if (get_user_zombie(id))
 			{
-				if (g_nemesis[id]) // Nemesis
+				if (get_user_nemesis(id)) // Nemesis
 				{
 					set_pev(id, pev_viewmodel2, model_vknife_nemesis)
 					set_pev(id, pev_weaponmodel2, "")
 				}
-				else if (g_assassin[id]) // Assassin
+				else if (get_user_assassin(id)) // Assassin
 				{
 					set_pev(id, pev_viewmodel2, model_vknife_assassin)
 					set_pev(id, pev_weaponmodel2, "")
@@ -10322,12 +10328,12 @@ replace_weapon_models(id, weaponid)
 		}
 		case CSW_M249: // Survivor's M249
 		{
-			if (g_survivor[id])
+			if (get_user_survivor(id))
 				set_pev(id, pev_viewmodel2, model_vm249_survivor)
 		}
 		case CSW_HEGRENADE: // Infection bomb or fire grenade
 		{
-			if (g_zombie[id])
+			if (get_user_zombie(id))
 				set_pev(id, pev_viewmodel2, model_grenade_infect)
 			else
 				set_pev(id, pev_viewmodel2, model_grenade_fire)
@@ -10342,7 +10348,7 @@ replace_weapon_models(id, weaponid)
 		}
 		case CSW_AWP: // Sniper's AWP
 		{
-			if (g_sniper[id])
+			if (get_user_sniper(id))
 				set_pev(id, pev_viewmodel2, model_vawp_sniper)
 		}
 	}
@@ -10354,14 +10360,14 @@ replace_weapon_models(id, weaponid)
 // Reset Player Vars
 reset_vars(id, resetall)
 {
-	g_zombie[id] = false
-	g_nemesis[id] = false
-	g_survivor[id] = false
+	set_user_zombie(id, 0)
+	set_user_nemesis(id, 0)
+	set_user_assassin(id, 0)
+	set_user_survivor(id, 0)
+	set_user_sniper(id, 0)
 	g_firstzombie[id] = false
 	g_lastzombie[id] = false
 	g_lasthuman[id] = false
-	g_sniper[id] = false
-	g_assassin[id] = false
 	g_frozen[id] = false
 	g_nodamage[id] = false
 	g_respawn_as_zombie[id] = false
@@ -10430,15 +10436,15 @@ public ShowHUD(taskid)
 	// Format classname
 	static class[32], red, green, blue
 	
-	if (g_zombie[id]) // zombies
+	if (get_user_zombie(id)) // zombies
 	{
 		red = 250
 		green = 250
 		blue = 10
 		
-		if (g_nemesis[id])
+		if (get_user_nemesis(id))
 			formatex(class, charsmax(class), "%L", ID_SHOWHUD, "CLASS_NEMESIS")
-		else if (g_assassin[id])
+		else if (get_user_assassin(id))
 			formatex(class, charsmax(class), "%L", ID_SHOWHUD, "CLASS_ASSASSIN")
 		else
 			copy(class, charsmax(class), g_zombie_classname[id])
@@ -10449,9 +10455,9 @@ public ShowHUD(taskid)
 		green = 180
 		blue = 255
 		
-		if (g_survivor[id])
+		if (get_user_survivor(id))
 			formatex(class, charsmax(class), "%L", ID_SHOWHUD, "CLASS_SURVIVOR")
-		else if (g_sniper[id])
+		else if (get_user_sniper(id))
 			formatex(class, charsmax(class), "%L", ID_SHOWHUD, "CLASS_SNIPER")
 		else
 			formatex(class, charsmax(class), "%L", ID_SHOWHUD, "CLASS_HUMAN")
@@ -10575,7 +10581,7 @@ fnGetZombies()
 	
 	for (id = 1; id <= g_maxplayers; id++)
 	{
-		if (g_isalive[id] && g_zombie[id])
+		if (g_isalive[id] && get_user_zombie(id))
 			iZombies++
 	}
 	
@@ -10590,7 +10596,7 @@ fnGetHumans()
 	
 	for (id = 1; id <= g_maxplayers; id++)
 	{
-		if (g_isalive[id] && !g_zombie[id])
+		if (g_isalive[id] && !get_user_zombie(id))
 			iHumans++
 	}
 	
@@ -10605,7 +10611,7 @@ fnGetNemesis()
 	
 	for (id = 1; id <= g_maxplayers; id++)
 	{
-		if (g_isalive[id] && g_nemesis[id])
+		if (g_isalive[id] && get_user_nemesis(id))
 			iNemesis++
 	}
 	
@@ -10620,7 +10626,7 @@ fnGetSurvivors()
 	
 	for (id = 1; id <= g_maxplayers; id++)
 	{
-		if (g_isalive[id] && g_survivor[id])
+		if (g_isalive[id] && get_user_survivor(id))
 			iSurvivors++
 	}
 	
@@ -10635,7 +10641,7 @@ fnGetSnipers()
 	
 	for (id = 1; id <= g_maxplayers; id++)
 	{
-		if (g_isalive[id] && g_sniper[id])
+		if (g_isalive[id] && get_user_sniper(id))
 			iSnipers++
 	}
 	
@@ -10649,7 +10655,7 @@ fnGetAssassin()
 	
 	for (id = 1; id <= g_maxplayers; id++)
 	{
-		if (g_isalive[id] && g_assassin[id])
+		if (g_isalive[id] && get_user_assassin(id))
 			iAssassin++
 	}
 	
@@ -10788,7 +10794,7 @@ fnCheckLastZombie()
 	for (id = 1; id <= g_maxplayers; id++)
 	{
 		// Last zombie
-		if (g_isalive[id] && g_zombie[id] && !g_nemesis[id] && !g_assassin[id] && fnGetZombies() == 1)
+		if (g_isalive[id] && get_user_zombie(id) && !get_user_nemesis(id) && !get_user_assassin(id) && fnGetZombies() == 1)
 		{
 			if (!g_lastzombie[id])
 			{
@@ -10801,7 +10807,7 @@ fnCheckLastZombie()
 			g_lastzombie[id] = false
 		
 		// Last human
-		if (g_isalive[id] && !g_zombie[id] && !g_survivor[id] && !g_sniper[id] && fnGetHumans() == 1)
+		if (g_isalive[id] && !get_user_zombie(id) && !get_user_survivor(id) && !get_user_sniper(id) && fnGetHumans() == 1)
 		{
 			if (!g_lasthuman[id])
 			{
@@ -10862,7 +10868,7 @@ load_stats(id)
 // Checks if a player is allowed to be zombie
 allowed_zombie(id)
 {
-	if ((g_zombie[id] && !g_nemesis[id] && !g_assassin[id]) || g_endround || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && !g_zombie[id] && fnGetHumans() == 1))
+	if ((get_user_zombie(id) && !get_user_nemesis(id) && !get_user_assassin(id)) || g_endround || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && !get_user_zombie(id) && fnGetHumans() == 1))
 		return false;
 	
 	return true;
@@ -10871,7 +10877,7 @@ allowed_zombie(id)
 // Checks if a player is allowed to be human
 allowed_human(id)
 {
-	if ((!g_zombie[id] && !g_survivor[id] && !g_sniper[id]) || g_endround || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && g_zombie[id] && fnGetZombies() == 1))
+	if ((!get_user_zombie(id) && !get_user_survivor(id) && !get_user_sniper(id)) || g_endround || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && get_user_zombie(id) && fnGetZombies() == 1))
 		return false;
 	
 	return true;
@@ -10880,7 +10886,7 @@ allowed_human(id)
 // Checks if a player is allowed to be survivor
 allowed_survivor(id)
 {
-	if (g_endround || g_survivor[id] || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && g_zombie[id] && fnGetZombies() == 1))
+	if (g_endround || get_user_survivor(id) || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && get_user_zombie(id) && fnGetZombies() == 1))
 		return false;
 	
 	return true;
@@ -10889,7 +10895,7 @@ allowed_survivor(id)
 // Checks if a player is allowed to be nemesis
 allowed_nemesis(id)
 {
-	if (g_endround || g_nemesis[id] || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && !g_zombie[id] && fnGetHumans() == 1))
+	if (g_endround || get_user_nemesis(id) || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && !get_user_zombie(id) && fnGetHumans() == 1))
 		return false;
 	
 	return true;
@@ -10938,7 +10944,7 @@ allowed_plague()
 // Checks if a player is allowed to be sniper
 allowed_sniper(id)
 {
-	if (g_endround || g_sniper[id] || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && g_zombie[id] && fnGetZombies() == 1))
+	if (g_endround || get_user_sniper(id) || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && get_user_zombie(id) && fnGetZombies() == 1))
 		return false;
 	
 	return true;
@@ -10946,7 +10952,7 @@ allowed_sniper(id)
 // Checks if a player ia sllowed to be assassin
 allowed_assassin(id)
 {
-	if (g_endround || g_assassin[id] || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && !g_zombie[id] && fnGetHumans() == 1))
+	if (g_endround || get_user_assassin(id) || !g_isalive[id] || task_exists(TASK_WELCOMEMSG) || (!g_newround && !get_user_zombie(id) && fnGetHumans() == 1))
 		return false;
 	
 	return true;
@@ -11359,19 +11365,111 @@ command_custom_game(gameid, id)
 // Native: zp_get_user_zombie
 public native_get_user_zombie(id)
 {
-	return g_zombie[id];
+	return get_user_zombie(id);
+}
+
+public get_user_zombie(id)
+{
+	if(get_bit(g_zombie, id))
+		return true
+	return false
+}
+
+// set bit 0 or 1
+public set_user_zombie(id, mode)
+{
+	if(mode)
+		set_bit(g_zombie, id);
+	else
+		unset_bit(g_zombie, id);
 }
 
 // Native: zp_get_user_nemesis
 public native_get_user_nemesis(id)
 {
-	return g_nemesis[id];
+	return get_user_nemesis(id);
+}
+
+public get_user_nemesis(id)
+{
+	if(get_bit(g_nemesis, id))
+		return true
+	return false
+}
+
+// set bit 0 or 1
+public set_user_nemesis(id, mode)
+{
+	if(mode)
+		set_bit(g_nemesis, id);
+	else
+		unset_bit(g_nemesis, id);
 }
 
 // Native: zp_get_user_survivor
 public native_get_user_survivor(id)
 {
-	return g_survivor[id];
+	return get_user_survivor(id);
+}
+
+public get_user_survivor(id)
+{
+	if(get_bit(g_survivor, id))
+		return true
+	return false
+}
+
+// set bit 0 or 1
+public set_user_survivor(id, mode)
+{
+	if(mode)
+		set_bit(g_survivor, id);
+	else
+		unset_bit(g_survivor, id);
+}
+
+// Native: zp_get_user_sniper
+public native_get_user_sniper(id)
+{
+	return get_user_sniper(id);
+}
+
+public get_user_sniper(id)
+{
+	if(get_bit(g_sniper, id))
+		return true
+	return false
+}
+
+// set bit 0 or 1
+public set_user_sniper(id, mode)
+{
+	if(mode)
+		set_bit(g_sniper, id);
+	else
+		unset_bit(g_sniper, id);
+}
+
+// Native: zp_get_user_assassin
+public native_get_user_assassin(id)
+{
+	return get_user_assassin(id);
+}
+
+public get_user_assassin(id)
+{
+	if(get_bit(g_assassin, id))
+		return true
+	return false
+}
+
+// set bit 0 or 1
+public set_user_assassin(id, mode)
+{
+	if(mode)
+		set_bit(g_assassin, id);
+	else
+		unset_bit(g_assassin, id);
 }
 
 public native_get_user_first_zombie(id)
@@ -11432,7 +11530,7 @@ public native_get_zombie_maxhealth(id)
 	if (!g_pluginenabled)
 		return -1;
 	
-	if (g_zombie[id] && !g_nemesis[id] && !g_assassin[id])
+	if (get_user_zombie(id) && !get_user_nemesis(id) && !get_user_assassin(id))
 	{
 		if (g_firstzombie[id])
 			return floatround(float(ArrayGetCell(g_zclass_hp, g_zombieclass[id])) * get_pcvar_float(cvar_zombiefirsthp))
@@ -11606,6 +11704,60 @@ public native_make_user_survivor(id)
 	return 1;
 }
 
+// Native: zp_make_user_sniper
+public native_make_user_sniper(id)
+{
+	// ZPA disabled
+	if (!g_pluginenabled)
+		return -1;
+	
+	// Not allowed to be sniper
+	if (!allowed_sniper(id))
+		return 0;
+	
+	// New round?
+	if (g_newround)
+	{
+		// Set as first sniper
+		remove_task(TASK_MAKEZOMBIE)
+		start_sniper_mode(id, MODE_SET)
+	}
+	else
+	{
+		// Turn player into a Sniper
+		humanme(id, 0, 0, 1)
+	}
+	
+	return 1;
+}
+
+// Native: zp_make_user_assassin
+public native_make_user_assassin(id)
+{
+	// ZPA disabled
+	if (!g_pluginenabled)
+		return -1;
+	
+	// Not allowed to be assassin
+	if (!allowed_assassin(id))
+		return 0;
+	
+	// New round?
+	if (g_newround)
+	{
+		// Set as first assassin
+		remove_task(TASK_MAKEZOMBIE)
+		start_assassin_mode(id, MODE_SET)
+	}
+	else
+	{
+		// Turn player into a Assassin
+		zombieme(id, 0, 0, 0, 0, 1)
+	}
+	
+	return 1;
+}
+
 // Native: zp_respawn_user
 public native_respawn_user(id, team)
 {
@@ -11643,71 +11795,6 @@ public native_force_buy_extra_item(id, itemid, ignorecost)
 	return 1;
 }
 
-// Native: zp_get_user_sniper
-public native_get_user_sniper(id)
-{
-	return g_sniper[id];
-}
-
-// Native: zp_make_user_sniper
-public native_make_user_sniper(id)
-{
-	// ZPA disabled
-	if (!g_pluginenabled)
-		return -1;
-	
-	// Not allowed to be sniper
-	if (!allowed_sniper(id))
-		return 0;
-	
-	// New round?
-	if (g_newround)
-	{
-		// Set as first sniper
-		remove_task(TASK_MAKEZOMBIE)
-		start_sniper_mode(id, MODE_SET)
-	}
-	else
-	{
-		// Turn player into a Sniper
-		humanme(id, 0, 0, 1)
-	}
-	
-	return 1;
-}
-
-// Native: zp_get_user_assassin
-public native_get_user_assassin(id)
-{
-	return g_assassin[id];
-}
-
- // Native: zp_make_user_assassin
-public native_make_user_assassin(id)
-{
-	// ZPA disabled
-	if (!g_pluginenabled)
-		return -1;
-	
-	// Not allowed to be assassin
-	if (!allowed_assassin(id))
-		return 0;
-	
-	// New round?
-	if (g_newround)
-	{
-		// Set as first assassin
-		remove_task(TASK_MAKEZOMBIE)
-		start_assassin_mode(id, MODE_SET)
-	}
-	else
-	{
-		// Turn player into a Assassin
-		zombieme(id, 0, 0, 0, 0, 1)
-	}
-	
-	return 1;
-}
 
 // Native: zp_get_user_model
 public native_get_user_model(plugin_id, param_nums)
@@ -12200,21 +12287,21 @@ public set_user_nvision(taskid)
 	write_byte(get_pcvar_num(cvar_nvgsize)) // radius
 	
 	// Nemesis / Madness / Spectator in nemesis round
-	if (g_nemesis[ID_NVISION] || (g_zombie[ID_NVISION] && g_nodamage[ID_NVISION]) || (!g_isalive[ID_NVISION] && g_nemround))
+	if (get_user_nemesis(ID_NVISION) || (get_user_zombie(ID_NVISION) && g_nodamage[ID_NVISION]) || (!g_isalive[ID_NVISION] && g_nemround))
 	{
 		write_byte(get_pcvar_num(cvar_nemnvgcolor[0])) // r
 		write_byte(get_pcvar_num(cvar_nemnvgcolor[1])) // g
 		write_byte(get_pcvar_num(cvar_nemnvgcolor[2])) // b
 	}
 	// Assassin / Spectator in assassin round
-	else if (g_assassin[ID_NVISION] || (!g_isalive[ID_NVISION] && g_assassinround))
+	else if (get_user_assassin(ID_NVISION) || (!g_isalive[ID_NVISION] && g_assassinround))
 	{
 		write_byte(get_pcvar_num(cvar_assassinnvgcolor[0])) // r
 		write_byte(get_pcvar_num(cvar_assassinnvgcolor[1])) // g
 		write_byte(get_pcvar_num(cvar_assassinnvgcolor[2])) // b
 	}
 	// Human / Spectator in normal round
-	else if (!g_zombie[ID_NVISION] || !g_isalive[ID_NVISION])
+	else if (!get_user_zombie(ID_NVISION) || !g_isalive[ID_NVISION])
 	{
 		write_byte(get_pcvar_num(cvar_humnvgcolor[0])) // r
 		write_byte(get_pcvar_num(cvar_humnvgcolor[1])) // g
@@ -12297,13 +12384,13 @@ infection_effects(id)
 		write_short(UNIT_SECOND) // duration
 		write_short(0) // hold time
 		write_short(FFADE_IN) // fade type
-		if (g_nemesis[id])
+		if (get_user_nemesis(id))
 		{
 			write_byte(get_pcvar_num(cvar_nemnvgcolor[0])) // r
 			write_byte(get_pcvar_num(cvar_nemnvgcolor[1])) // g
 			write_byte(get_pcvar_num(cvar_nemnvgcolor[2])) // b
 		}
-		else if (g_assassin[id])
+		else if (get_user_assassin(id))
 		{
 			write_byte(get_pcvar_num(cvar_assassinnvgcolor[0])) // r
 			write_byte(get_pcvar_num(cvar_assassinnvgcolor[1])) // g
@@ -12396,7 +12483,7 @@ infection_effects(id)
 public zombie_aura(taskid)
 {
 	// Not nemesis, not in zombie madness
-	if (!g_nemesis[ID_AURA] && !g_nodamage[ID_AURA] && !g_assassin[ID_AURA])
+	if (!get_user_nemesis(ID_AURA) && !g_nodamage[ID_AURA] && !get_user_assassin(ID_AURA))
 	{
 		// Task not needed anymore
 		remove_task(taskid);
@@ -12416,7 +12503,7 @@ public zombie_aura(taskid)
 	write_byte(get_pcvar_num(cvar_nemauraradius)) // radius
 	
 	// Different aura color for assassin
-	if (g_assassin[ID_AURA])
+	if (get_user_assassin(ID_AURA))
 	{
 		write_byte(get_pcvar_num(cvar_assassinnvgcolor[0])) // r
 		write_byte(get_pcvar_num(cvar_assassinnvgcolor[1])) // g
@@ -12438,7 +12525,7 @@ public zombie_aura(taskid)
 public human_aura(taskid)
 {
 	// Not survivor or sniper
-	if (!g_survivor[ID_AURA] && !g_sniper[ID_AURA])
+	if (!get_user_survivor(ID_AURA) && !get_user_sniper(ID_AURA))
 	{
 		// Task not needed anymore
 		remove_task(taskid);
@@ -12457,7 +12544,7 @@ public human_aura(taskid)
 	write_coord(origin[2]) // z
 	
 	// Set aura for sniper
-	if (g_sniper[ID_AURA])
+	if (get_user_sniper(ID_AURA))
 	{
 		write_byte(get_pcvar_num(cvar_sniperauraradius)) // radius
 		write_byte(get_pcvar_num(cvar_snipercolor[0])) // r
@@ -12582,7 +12669,7 @@ public burning_flame(taskid)
 	}
 	
 	// Randomly play burning zombie scream sounds (not for nemesis or assassin)
-	if (!g_nemesis[ID_BURN] && !g_assassin[ID_BURN] && !random_num(0, 20))
+	if (!get_user_nemesis(ID_BURN) && !get_user_assassin(ID_BURN) && !random_num(0, 20))
 	{
 		static sound[64]
 		ArrayGetString(grenade_fire_player, random_num(0, ArraySize(grenade_fire_player) - 1), sound, charsmax(sound))
@@ -12590,7 +12677,7 @@ public burning_flame(taskid)
 	}
 	
 	// Fire slow down, unless nemesis
-	if (!g_nemesis[ID_BURN] && !g_assassin[ID_BURN] && (flags & FL_ONGROUND) && get_pcvar_float(cvar_fireslowdown) > 0.0)
+	if (!get_user_nemesis(ID_BURN) && !get_user_assassin(ID_BURN) && (flags & FL_ONGROUND) && get_pcvar_float(cvar_fireslowdown) > 0.0)
 	{
 		static Float:velocity[3]
 		pev(ID_BURN, pev_velocity, velocity)
