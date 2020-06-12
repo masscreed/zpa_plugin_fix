@@ -637,14 +637,14 @@ new g_nemesis // is nemesis
 new g_survivor // is survivor
 new g_sniper // is sniper
 new g_assassin // is assassin
-new g_firstzombie[33] // is first zombie
-new g_lastzombie[33] // is last zombie
-new g_lasthuman[33] // is last human
+new g_firstzombie // is first zombie
+new g_lastzombie // is last zombie
+new g_lasthuman // is last human
 new g_frozen[33] // is frozen (can't move)
 new g_nodamage[33] // has spawn protection/zombie madness
 new g_respawn_as_zombie[33] // should respawn as zombie
-new g_nvision[33] // has night vision
-new g_nvisionenabled[33] // has night vision turned on
+new g_nvision // has night vision
+new g_nvisionenabled // has night vision turned on
 new g_zombieclass[33] // zombie class
 new g_zombieclassnext[33] // zombie class for next infection
 new g_flashlight[33] // has custom flashlight turned on
@@ -2484,20 +2484,20 @@ public fw_PlayerKilled(victim, attacker, shouldgib)
 	set_task(0.1, "spec_nvision", victim)
 	
 	// Disable nightvision when killed (bugfix)
-	if (get_pcvar_num(cvar_nvggive) == 0 && g_nvision[victim])
+	if (get_pcvar_num(cvar_nvggive) == 0 && get_user_nightvision(victim))
 	{
 		if (get_pcvar_num(cvar_customnvg)) remove_task(victim+TASK_NVISION)
-		else if (g_nvisionenabled[victim]) set_user_gnvision(victim, 0)
-		g_nvision[victim] = false
-		g_nvisionenabled[victim] = false
+		else if (get_user_nightvision_enable(victim)) set_user_gnvision(victim, 0)
+		set_user_nightvision(victim, 0)
+		set_user_nightvision_enable(victim, 0)
 	}
 	
 	// Turn off nightvision when killed (bugfix)
-	if (get_pcvar_num(cvar_nvggive) == 2 && g_nvision[victim] && g_nvisionenabled[victim])
+	if (get_pcvar_num(cvar_nvggive) == 2 && get_user_nightvision(victim) && get_user_nightvision_enable(victim))
 	{
 		if (get_pcvar_num(cvar_customnvg)) remove_task(victim+TASK_NVISION)
 		else set_user_gnvision(victim, 0)
-		g_nvisionenabled[victim] = false
+		set_user_nightvision_enable(victim, 0)
 	}
 	
 	// Turn off custom flashlight when killed
@@ -2730,7 +2730,7 @@ public fw_TakeDamage_Post(victim)
 			switch (get_pcvar_num(cvar_zombiepainfree))
 			{
 				case 0: return;
-				case 2: if (!g_lastzombie[victim]) return;
+				case 2: if (!get_user_last_zombie(victim)) return;
 			}
 		}
 	}
@@ -3560,8 +3560,8 @@ public fw_PlayerPreThink(id)
 			switch (g_cached_leapzombies)
 			{
 				case 0: return;
-				case 2: if (!g_firstzombie[id]) return;
-				case 3: if (!g_lastzombie[id]) return;
+				case 2: if (!get_user_first_zombie(id)) return;
+				case 3: if (!get_user_last_zombie(id)) return;
 			}
 			cooldown = g_cached_leapzombiescooldown
 		}
@@ -3646,19 +3646,19 @@ public clcmd_sayunstuck(id)
 // Nightvision toggle
 public clcmd_nightvision(id)
 {
-	if (g_nvision[id])
+	if (get_user_nightvision(id))
 	{
 		// Enable-disable
-		g_nvisionenabled[id] = !(g_nvisionenabled[id])
+		set_user_nightvision_enable(id, !(get_user_nightvision_enable(id))) 
 		
 		// Custom nvg?
 		if (get_pcvar_num(cvar_customnvg))
 		{
 			remove_task(id+TASK_NVISION)
-			if (g_nvisionenabled[id]) set_task(0.1, "set_user_nvision", id+TASK_NVISION, _, _, "b")
+			if (get_user_nightvision_enable(id)) set_task(0.1, "set_user_nvision", id+TASK_NVISION, _, _, "b")
 		}
 		else
-			set_user_gnvision(id, g_nvisionenabled[id])
+			set_user_gnvision(id, get_user_nightvision_enable(id))
 	}
 	
 	return PLUGIN_HANDLED;
@@ -4841,11 +4841,11 @@ buy_extra_item(id, itemid, ignorecost = 0)
 	{
 		case EXTRA_NVISION: // Night Vision
 		{
-			g_nvision[id] = true
+			set_user_nightvision(id, 1)
 			
 			if (!g_isbot[id])
 			{
-				g_nvisionenabled[id] = true
+				set_user_nightvision_enable(id, 1)
 				
 				// Custom nvg?
 				if (get_pcvar_num(cvar_customnvg))
@@ -7110,7 +7110,7 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 	set_user_assassin(id, 0)
 	set_user_survivor(id, 0)
 	set_user_sniper(id, 0) 
-	g_firstzombie[id] = false
+	set_user_first_zombie(id, 0)
 	
 	
 	// Remove aura (bugfix)
@@ -7188,7 +7188,7 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 		else if ((fnGetZombies() == 1) && !get_user_assassin(id) && !get_user_nemesis(id) )
 		{
 			// First zombie
-			g_firstzombie[id] = true
+			set_user_first_zombie(id, 1)
 			
 			// Set health and gravity, unless frozen
 			fm_set_user_health(id, floatround(float(ArrayGetCell(g_zclass_hp, g_zombieclass[id])) * get_pcvar_float(cvar_zombiefirsthp)))
@@ -7430,14 +7430,14 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 	// Give Zombies Night Vision?
 	if (get_pcvar_num(cvar_nvggive))
 	{
-		g_nvision[id] = true
+		set_user_nightvision(id, 1)
 		
 		if (!g_isbot[id])
 		{
 			// Turn on Night Vision automatically?
 			if (get_pcvar_num(cvar_nvggive) == 1)
 			{
-				g_nvisionenabled[id] = true
+				set_user_nightvision_enable(id, 1)
 				
 				// Custom nvg?
 				if (get_pcvar_num(cvar_customnvg))
@@ -7449,24 +7449,24 @@ zombieme(id, infector, nemesis, silentmode, rewards, assassin)
 					set_user_gnvision(id, 1)
 			}
 			// Turn off nightvision when infected (bugfix)
-			else if (g_nvisionenabled[id])
+			else if (get_user_nightvision_enable(id))
 			{
 				if (get_pcvar_num(cvar_customnvg)) remove_task(id+TASK_NVISION)
 				else set_user_gnvision(id, 0)
-				g_nvisionenabled[id] = false
+				set_user_nightvision_enable(id, 0)
 			}
 		}
 		else
 			cs_set_user_nvg(id, 1); // turn on NVG for bots
 	}
 	// Disable nightvision when infected (bugfix)
-	else if (g_nvision[id])
+	else if (get_user_nightvision(id))
 	{
 		if (g_isbot[id]) cs_set_user_nvg(id, 0) // Turn off NVG for bots
 		if (get_pcvar_num(cvar_customnvg)) remove_task(id+TASK_NVISION)
-		else if (g_nvisionenabled[id]) set_user_gnvision(id, 0)
-		g_nvision[id] = false
-		g_nvisionenabled[id] = false
+		else if (get_user_nightvision_enable(id)) set_user_gnvision(id, 0)
+		set_user_nightvision(id, 0)
+		set_user_nightvision_enable(id, 0)
 	}
 	
 	// Set custom FOV?
@@ -7523,10 +7523,10 @@ humanme(id, survivor, silentmode, sniper)
 	set_user_assassin(id, 0)
 	set_user_survivor(id, 0)
 	set_user_sniper(id, 0)
-	g_firstzombie[id] = false
+	set_user_first_zombie(id, 0)
 	g_canbuy[id] = true
-	g_nvision[id] = false
-	g_nvisionenabled[id] = false
+	set_user_nightvision(id, 0)
+	set_user_nightvision_enable(id, 0)
 	
 	
 	// Remove survivor/sniper's aura (bugfix)
@@ -7583,7 +7583,7 @@ humanme(id, survivor, silentmode, sniper)
 		// Survivor bots will also need nightvision to see in the dark
 		if (g_isbot[id])
 		{
-			g_nvision[id] = true
+			set_user_nightvision(id, 1)
 			cs_set_user_nvg(id, 1)
 		}
 	}
@@ -7620,7 +7620,7 @@ humanme(id, survivor, silentmode, sniper)
 		// Sniper bots will also need nightvision to see in the dark
 		if (g_isbot[id])
 		{
-			g_nvision[id] = true
+			set_user_nightvision(id, 1)
 			cs_set_user_nvg(id, 1)
 		}
 	}
@@ -7828,7 +7828,7 @@ humanme(id, survivor, silentmode, sniper)
 	
 	// Disable nightvision
 	if (g_isbot[id]) cs_set_user_nvg(id, 0)
-	else if (!get_pcvar_num(cvar_customnvg) && g_nvisionenabled[id]) set_user_gnvision(id, 0)
+	else if (!get_pcvar_num(cvar_customnvg) && get_user_nightvision_enable(id)) set_user_gnvision(id, 0)
 	
 	// Post user humanize forward
 	ExecuteForward(g_fwUserHumanized_post, g_fwDummyResult, id, survivor)
@@ -10365,14 +10365,14 @@ reset_vars(id, resetall)
 	set_user_assassin(id, 0)
 	set_user_survivor(id, 0)
 	set_user_sniper(id, 0)
-	g_firstzombie[id] = false
-	g_lastzombie[id] = false
-	g_lasthuman[id] = false
+	set_user_first_zombie(id, 0)
+	set_user_last_zombie(id, 0)
+	set_user_last_human(id, 0)
 	g_frozen[id] = false
 	g_nodamage[id] = false
 	g_respawn_as_zombie[id] = false
-	g_nvision[id] = false
-	g_nvisionenabled[id] = false
+	set_user_nightvision(id, 0) 
+	set_user_nightvision_enable(id, 0)
 	g_flashlight[id] = false
 	g_flashbattery[id] = 100
 	g_canbuy[id] = true
@@ -10398,12 +10398,12 @@ public spec_nvision(id)
 	// Give Night Vision?
 	if (get_pcvar_num(cvar_nvggive))
 	{
-		g_nvision[id] = true
+		set_user_nightvision(id, 1)
 		
 		// Turn on Night Vision automatically?
 		if (get_pcvar_num(cvar_nvggive) == 1)
 		{
-			g_nvisionenabled[id] = true
+			set_user_nightvision_enable(id, 1) 
 			
 			// Custom nvg?
 			if (get_pcvar_num(cvar_customnvg))
@@ -10490,7 +10490,7 @@ public zombie_play_idle(taskid)
 	static sound[64]
 	
 	// Last zombie?
-	if (g_lastzombie[ID_BLOOD])
+	if (get_user_last_zombie(ID_BLOOD))
 	{
 		ArrayGetString(zombie_idle_last, random_num(0, ArraySize(zombie_idle_last) - 1), sound, charsmax(sound))
 		emit_sound(ID_BLOOD, CHAN_VOICE, sound, 1.0, ATTN_NORM, 0, PITCH_NORM)
@@ -10796,20 +10796,20 @@ fnCheckLastZombie()
 		// Last zombie
 		if (g_isalive[id] && get_user_zombie(id) && !get_user_nemesis(id) && !get_user_assassin(id) && fnGetZombies() == 1)
 		{
-			if (!g_lastzombie[id])
+			if (!get_user_last_zombie(id))
 			{
 				// Last zombie forward
 				ExecuteForward(g_fwUserLastZombie, g_fwDummyResult, id);
 			}
-			g_lastzombie[id] = true
+			set_user_last_zombie(id, 1)
 		}
 		else
-			g_lastzombie[id] = false
+			set_user_last_zombie(id, 0)
 		
 		// Last human
 		if (g_isalive[id] && !get_user_zombie(id) && !get_user_survivor(id) && !get_user_sniper(id) && fnGetHumans() == 1)
 		{
-			if (!g_lasthuman[id])
+			if (!get_user_last_human(id))
 			{
 				// Last human forward
 				ExecuteForward(g_fwUserLastHuman, g_fwDummyResult, id);
@@ -10817,10 +10817,10 @@ fnCheckLastZombie()
 				// Reward extra hp
 				fm_set_user_health(id, pev(id, pev_health) + get_pcvar_num(cvar_humanlasthp))
 			}
-			g_lasthuman[id] = true
+			set_user_last_human(id, 1)
 		}
 		else
-			g_lasthuman[id] = false
+			set_user_last_human(id, 0)
 	}
 }
 
@@ -11474,19 +11474,67 @@ public set_user_assassin(id, mode)
 
 public native_get_user_first_zombie(id)
 {
-	return g_firstzombie[id];
+	return get_user_first_zombie(id);
+}
+
+public get_user_first_zombie(id)
+{
+	if(get_bit(g_firstzombie, id))
+		return true
+	return false
+}
+
+// set bit 0 or 1
+public set_user_first_zombie(id, mode)
+{
+	if(mode)
+		set_bit(g_firstzombie, id);
+	else
+		unset_bit(g_firstzombie, id);
 }
 
 // Native: zp_get_user_last_zombie
 public native_get_user_last_zombie(id)
 {
-	return g_lastzombie[id];
+	return get_user_last_zombie(id);
+}
+
+public get_user_last_zombie(id)
+{
+	if(get_bit(g_firstzombie, id))
+		return true
+	return false
+}
+
+// set bit 0 or 1
+public set_user_last_zombie(id, mode)
+{
+	if(mode)
+		set_bit(g_lastzombie, id);
+	else
+		unset_bit(g_lastzombie, id);
 }
 
 // Native: zp_get_user_last_human
 public native_get_user_last_human(id)
 {
-	return g_lasthuman[id];
+	return get_user_last_human(id);
+}
+
+public get_user_last_human(id)
+{
+	if(get_bit(g_lasthuman, id))
+		return true
+	return false
+}
+
+// set bit 0 or 1
+public set_user_last_human(id, mode)
+{
+	if(mode)
+		set_bit(g_lasthuman, id);
+	else
+		unset_bit(g_lasthuman, id);
 }
 
 // Native: zp_get_user_zombie_class
@@ -11532,7 +11580,7 @@ public native_get_zombie_maxhealth(id)
 	
 	if (get_user_zombie(id) && !get_user_nemesis(id) && !get_user_assassin(id))
 	{
-		if (g_firstzombie[id])
+		if (get_user_first_zombie(id))
 			return floatround(float(ArrayGetCell(g_zclass_hp, g_zombieclass[id])) * get_pcvar_float(cvar_zombiefirsthp))
 		else
 			return ArrayGetCell(g_zclass_hp, g_zombieclass[id])
@@ -11566,7 +11614,7 @@ public native_set_user_batteries(id, value)
 // Native: zp_get_user_nightvision
 public native_get_user_nightvision(id)
 {
-	return g_nvision[id];
+	return get_user_nightvision(id);
 }
 
 // Native: zp_set_user_nightvision
@@ -11578,11 +11626,11 @@ public native_set_user_nightvision(id, set)
 	
 	if (set)
 	{
-		g_nvision[id] = true
+		set_user_nightvision(id, 1)
 		
 		if (!g_isbot[id])
 		{
-			g_nvisionenabled[id] = true
+			set_user_nightvision_enable(id, 1)
 			
 			// Custom nvg?
 			if (get_pcvar_num(cvar_customnvg))
@@ -11601,10 +11649,41 @@ public native_set_user_nightvision(id, set)
 		// Turn off NVG for bots
 		if (g_isbot[id]) cs_set_user_nvg(id, 0);
 		if (get_pcvar_num(cvar_customnvg)) remove_task(id+TASK_NVISION)
-		else if (g_nvisionenabled[id]) set_user_gnvision(id, 0)
-		g_nvision[id] = false
-		g_nvisionenabled[id] = false
+		else if (get_user_nightvision_enable(id)) set_user_gnvision(id, 0)
+		set_user_nightvision(id, 0)
+		set_user_nightvision_enable(id, 0)
 	}
+}
+
+public get_user_nightvision(id)
+{
+	if(get_bit(g_nvision, id))
+		return true
+	return false
+}
+
+public get_user_nightvision_enable(id)
+{
+	if(get_bit(g_nvisionenabled, id))
+		return true
+	return false
+}
+
+// set bit 0 or 1
+public set_user_nightvision(id, mode)
+{
+	if(mode)
+		set_bit(g_nvision, id);
+	else
+		unset_bit(g_nvision, id);
+}
+
+public set_user_nightvision_enable(id, mode)
+{
+	if(mode)
+		set_bit(g_nvisionenabled, id);
+	else
+		unset_bit(g_nvisionenabled, id);
 }
 
 // Native: zp_infect_user
